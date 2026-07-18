@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan Git history for secrets
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo:ro" -w /repo \
+            zricethezav/gitleaks:v8.24.3@sha256:e1b35e12a8c6fa8901f060459cfb6b2fc4c484d3afbe3b029733a3bbfab07055 \
+            detect --source=/repo --log-opts="--all" --redact
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+      - run: pip install pre-commit==4.2.0
+      - run: pre-commit run --all-files
+      - run: bash -n integrations/claude/hooks/*.sh
+      - run: shellcheck integrations/claude/hooks/*.sh
+      - name: Test Claude guards
+        run: |
+          assert_ask() {
+            printf '%s' "$1" | bash "$2" | jq -e '.hookSpecificOutput.permissionDecision == "ask"' >/dev/null
+          }
+          assert_pass() {
+            local output
+            output=$(printf '%s' "$1" | bash "$2")
+            test -z "$output"
+          }
+          cmd_payload() {
+            jq -cn --arg command "$1" '{tool_input: {command: $command}}'
+          }
+
+          # guard-readonly-postgres.sh
+          assert_pass "$(cmd_payload "psql -c 'SELECT 1'")" integrations/claude/hooks/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'DELETE FROM example'")" integrations/claude/hooks/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'SELECT pg_terminate_backend(1)'")" integrations/claude/hooks/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'select 1' -c 'update t set x=1'")" integrations/claude/hooks/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'SELECT 1' -c 'SELECT 2'")" integrations/claude/hooks/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'SELECT 1' -c'DROP TABLE students'")" integrations/claude/hooks/guard-readonly-postgres.sh
+
+          # block-dangerous.sh
+          assert_ask "$(cmd_payload "rm -rf generated")" integrations/claude/hooks/block-dangerous.sh
+          assert_pass "$(cmd_payload "rm /tmp/scratch.txt")" integrations/claude/hooks/block-dangerous.sh
+          assert_ask "$(cmd_payload "ls | xargs rm")" integrations/claude/hooks/block-dangerous.sh
+          assert_ask "$(cmd_payload "find / -name '*.log' -delete")" integrations/claude/hooks/block-dangerous.sh
+          assert_ask "$(cmd_payload "mysql -e \"UPDATE users SET admin=1 WHERE id=5\"")" integrations/claude/hooks/block-dangerous.sh
+          assert_pass "$(cmd_payload "truncate -s 0 file.log")" integrations/claude/hooks/block-dangerous.sh
+          assert_pass "$(cmd_payload "git stash drop")" integrations/claude/hooks/block-dangerous.sh
+          assert_pass "$(cmd_payload "git push --force-with-lease")" integrations/claude/hooks/block-dangerous.sh
+          assert_ask "$(cmd_payload "git push --force")" integrations/claude/hooks/block-dangerous.sh
+          assert_ask "$(cmd_payload "git checkout .")" integrations/claude/hooks/block-dangerous.sh
+          assert_pass "$(cmd_payload "git checkout release/v1.2")" integrations/claude/hooks/block-dangerous.sh
+
+          # confirm-external-impact.sh
+          assert_ask "$(cmd_payload "git push origin main")" integrations/claude/hooks/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "gh pr create")" integrations/claude/hooks/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "aws s3 sync . s3://bucket")" integrations/claude/hooks/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "flyctl deploy")" integrations/claude/hooks/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "make deploy")" integrations/claude/hooks/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "git -C /some/repo push origin main")" integrations/claude/hooks/confirm-external-impact.sh
