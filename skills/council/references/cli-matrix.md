@@ -33,3 +33,7 @@ before editing.
 - `agy` is the Antigravity CLI — Google's successor path for gemini CLI users
   (the free Gemini Code Assist tier was discontinued). Both rows are kept:
   machines may have either installed.
+- Default bench preferences: when both members of a provider pair are
+  installed, `council.sh` seats only one — `agy` over `gemini`, `codex` over
+  `opencode` — and logs what it dropped. An explicit `--members` list
+  disables the preference logic entirely.

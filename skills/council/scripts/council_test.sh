@@ -11,11 +11,18 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # --- Task 1: discovery ---
 
-# 1. mock discovery lists all four known members
+# 1. default mock bench applies provider preferences: agy supersedes gemini,
+#    codex supersedes opencode
 out=$("$COUNCIL" --mock members) || fail "mock members rc=$?"
-[ "$(echo "$out" | wc -l | tr -d ' ')" -eq 5 ] || fail "expected 5 mock members, got: $out"
-echo "$out" | grep -qx "codex" || fail "codex missing from mock members"
-echo "$out" | grep -qx "agy" || fail "agy missing from mock members"
+[ "$(echo "$out" | wc -l | tr -d ' ')" -eq 3 ] || fail "expected 3 default mock members (bench preferences), got: $out"
+echo "$out" | grep -qx "agy" || fail "agy missing from default mock members"
+echo "$out" | grep -qx "codex" || fail "codex missing from default mock members"
+! echo "$out" | grep -qx "gemini" || fail "gemini should be superseded by agy on the default bench"
+! echo "$out" | grep -qx "opencode" || fail "opencode should be superseded by codex on the default bench"
+
+# 1b. an explicit --members list is honored verbatim (no preferences applied)
+out=$("$COUNCIL" --mock --members "agy claude codex gemini opencode" members) || fail "explicit members rc=$?"
+[ "$(echo "$out" | wc -l | tr -d ' ')" -eq 5 ] || fail "expected 5 explicit members, got: $out"
 
 # 2. insufficient members -> exit 1
 rc=0
@@ -28,7 +35,7 @@ echo "What is the capital of France? One word." > "$TMP/prompt.md"
 
 # 3. mock dispatch: 4 responses, anonymized, mapping present
 run1="$TMP/run1"
-"$COUNCIL" --mock --run-dir "$run1" dispatch "$TMP/prompt.md" >/dev/null || fail "mock dispatch rc=$?"
+"$COUNCIL" --mock --members "agy claude codex gemini opencode" --run-dir "$run1" dispatch "$TMP/prompt.md" >/dev/null || fail "mock dispatch rc=$?"
 [ -f "$run1/prompt.md" ] || fail "prompt.md not copied into run dir"
 [ -f "$run1/anon/mapping.json" ] || fail "mapping.json missing"
 # shellcheck disable=SC2012  # counts files; behavior required by integration test
@@ -38,7 +45,7 @@ grep -q '"response-A"' "$run1/anon/mapping.json" || fail "mapping.json lacks res
 
 # 4. fail-soft: one member fails, council proceeds with 3
 run2="$TMP/run2"
-COUNCIL_MOCK_FAIL=codex "$COUNCIL" --mock --run-dir "$run2" dispatch "$TMP/prompt.md" >/dev/null \
+COUNCIL_MOCK_FAIL=codex "$COUNCIL" --mock --members "agy claude codex gemini opencode" --run-dir "$run2" dispatch "$TMP/prompt.md" >/dev/null \
   || fail "fail-soft dispatch rc=$?"
 # shellcheck disable=SC2012  # counts files; behavior required by integration test
 count=$(ls "$run2"/anon/response-*.md | wc -l | tr -d ' ')
@@ -57,7 +64,7 @@ echo "$out" | grep -q "claude -p" || fail "dry-run missing claude command"
 # --- Task 3: review ---
 
 # 6. mock review over run1: bundle built, one ranking per member
-"$COUNCIL" --mock review "$run1" >/dev/null || fail "mock review rc=$?"
+"$COUNCIL" --mock --members "agy claude codex gemini opencode" review "$run1" >/dev/null || fail "mock review rc=$?"
 [ -f "$run1/review-prompt.md" ] || fail "review-prompt.md missing"
 grep -q "response-A" "$run1/review-prompt.md" || fail "bundle lacks anonymized responses"
 [ -s "$run1/reviews/claude.md" ] || fail "claude review missing"
@@ -148,5 +155,22 @@ rc=0
   [ "$rc" -ne 0 ] || fail "kill escalation: expected non-zero rc for a TERM-ignoring command, got 0"
   [ "$elapsed" -lt 15 ] || fail "kill escalation: expected elapsed <15s for a TERM-ignoring command, got ${elapsed}s"
 ) || fail "kill escalation subshell failed"
+
+# --- Bench preferences: pure-function cases ---
+
+# 13. apply_bench_preferences drops provider duplicates, leaves fallbacks alone
+(
+  set -euo pipefail
+  # shellcheck disable=SC1090  # dynamic path to council.sh in this dir; verified to exist above
+  source "$COUNCIL"
+  out=$(apply_bench_preferences "agy claude codex gemini opencode" 2>/dev/null)
+  [ "$out" = "agy claude codex" ] || fail "preferences: expected 'agy claude codex', got '$out'"
+  out=$(apply_bench_preferences "claude codex gemini opencode" 2>/dev/null)
+  [ "$out" = "claude codex gemini" ] || fail "preferences: gemini kept when agy absent, opencode dropped; got '$out'"
+  out=$(apply_bench_preferences "agy claude gemini opencode" 2>/dev/null)
+  [ "$out" = "agy claude opencode" ] || fail "preferences: opencode kept when codex absent, gemini dropped; got '$out'"
+  out=$(apply_bench_preferences "claude gemini opencode" 2>/dev/null)
+  [ "$out" = "claude gemini opencode" ] || fail "preferences: nothing dropped without agy/codex; got '$out'"
+) || fail "bench preferences subshell failed"
 
 echo "ALL TESTS PASSED"

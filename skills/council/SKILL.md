@@ -72,5 +72,10 @@ prompt and show it to the user before dispatching.
 
 - `--timeout SECS` (default 300) for slow members; `--members "a b c"` to
   restrict the bench; per-member model overrides: references/cli-matrix.md.
+- Default bench preferences (provider diversity): `agy` supersedes `gemini`
+  (same Google seat) and `codex` supersedes `opencode` (opencode's default
+  configuration commonly resolves to the same provider as codex). An explicit
+  `--members` list is honored verbatim — pass one to seat both members of a
+  pair, e.g. when opencode is configured for a distinct provider.
 - Mechanics testing without API calls: `council.sh --mock`, `--dry-run`, and
   `scripts/council_test.sh`.

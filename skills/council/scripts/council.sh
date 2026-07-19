@@ -23,6 +23,7 @@ ARG_SIZE_WARN_BYTES=100000
 MOCK=0
 DRY_RUN=0
 MEMBERS="$KNOWN_MEMBERS"
+MEMBERS_EXPLICIT=0
 RUN_DIR=""
 
 log() { printf 'council: %s\n' "$*" >&2; }
@@ -66,6 +67,40 @@ discover_members() {
   echo "${found# }"
 }
 
+# Provider-duplicate preferences for the DEFAULT bench: agy supersedes gemini
+# (same Google seat; gemini CLI additionally hangs on interactive auth when
+# its tier is dead), and codex supersedes opencode (opencode's default
+# configuration commonly resolves to the same provider as codex). An explicit
+# --members list is honored verbatim — pass one to seat both members of a
+# pair, e.g. when opencode is configured for a distinct provider.
+apply_bench_preferences() {
+  local members=" $1 " dropped=""
+  if [ "${members#* agy }" != "$members" ] && [ "${members#* gemini }" != "$members" ]; then
+    members="${members/ gemini / }"
+    dropped="$dropped gemini(superseded by agy)"
+  fi
+  if [ "${members#* codex }" != "$members" ] && [ "${members#* opencode }" != "$members" ]; then
+    members="${members/ opencode / }"
+    dropped="$dropped opencode(superseded by codex)"
+  fi
+  if [ -n "$dropped" ]; then
+    log "bench preferences dropped:$dropped — pass --members to override"
+  fi
+  members="${members# }"
+  echo "${members% }"
+}
+
+# Discovery + default-bench preferences in one step. Every subcommand uses
+# this instead of calling discover_members directly.
+resolve_bench() {
+  local members
+  members=$(discover_members "$MEMBERS")
+  if [ "$MEMBERS_EXPLICIT" = "0" ]; then
+    members=$(apply_bench_preferences "$members")
+  fi
+  echo "$members"
+}
+
 require_quorum() {
   local members="$1" count
   count=$(echo "$members" | wc -w | tr -d ' ')
@@ -76,7 +111,7 @@ require_quorum() {
 
 cmd_members() {
   local members
-  members=$(discover_members "$MEMBERS")
+  members=$(resolve_bench)
   require_quorum "$members"
   # shellcheck disable=SC2086
   printf '%s\n' $members
@@ -238,7 +273,7 @@ cmd_dispatch() {
   local prompt_file="${1:-}"
   [ -n "$prompt_file" ] && [ -f "$prompt_file" ] || die "dispatch: prompt file required"
   local members
-  members=$(discover_members "$MEMBERS")
+  members=$(resolve_bench)
   require_quorum "$members"
 
   local run_dir="${RUN_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/council.XXXXXX")}"
@@ -304,7 +339,7 @@ cmd_review() {
   } > "$bundle"
 
   local members
-  members=$(discover_members "$MEMBERS")
+  members=$(resolve_bench)
   require_quorum "$members"
 
   if [ "$DRY_RUN" = "1" ]; then
@@ -338,7 +373,7 @@ main() {
     case "$1" in
       --members)
         [ $# -ge 2 ] || die "missing value for $1"
-        MEMBERS="$2"; shift 2 ;;
+        MEMBERS="$2"; MEMBERS_EXPLICIT=1; shift 2 ;;
       --timeout)
         [ $# -ge 2 ] || die "missing value for $1"
         TIMEOUT_SECS="$2"; shift 2 ;;
