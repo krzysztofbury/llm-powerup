@@ -13,6 +13,7 @@ Claude Code, Codex, and OpenCode.
 
 | Skill | Purpose |
 | --- | --- |
+| `council` | Convene installed agent CLIs as a multi-model council with anonymized peer review. |
 | `data-news` | Curate a current data engineering and database briefing. |
 | `oura` | Summarize user-authorized health and readiness data. |
 | `pair-programmer` | Apply a safety-first engineering review workflow. |

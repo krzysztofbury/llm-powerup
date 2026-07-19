@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- `council` skill: convene installed agent CLIs (Claude, Codex, Gemini,
+  OpenCode) as a multi-model council over headless, read-only sessions —
+  parallel dispatch, anonymized peer ranking, and chairman synthesis.
+  Adapted from [karpathy/llm-council](https://github.com/karpathy/llm-council).
 - Public project specification, contribution guide, code of conduct, and CI.
 - Claude hooks for auto-lint, dangerous-command confirmation,
   external-impact confirmation, and read-only PostgreSQL input.
