@@ -18,7 +18,3 @@
 </rules>
 
 <output>Baseline Score → Failure Patterns Ranked → Root Cause per Pattern → Ready for Optimization</output>
-
-
-## TURN YOUR CHANGELOG INTO RULES
-
