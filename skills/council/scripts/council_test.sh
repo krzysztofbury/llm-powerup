@@ -13,8 +13,9 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # 1. mock discovery lists all four known members
 out=$("$COUNCIL" --mock members) || fail "mock members rc=$?"
-[ "$(echo "$out" | wc -l | tr -d ' ')" -eq 4 ] || fail "expected 4 mock members, got: $out"
+[ "$(echo "$out" | wc -l | tr -d ' ')" -eq 5 ] || fail "expected 5 mock members, got: $out"
 echo "$out" | grep -qx "codex" || fail "codex missing from mock members"
+echo "$out" | grep -qx "agy" || fail "agy missing from mock members"
 
 # 2. insufficient members -> exit 1
 rc=0
@@ -32,7 +33,7 @@ run1="$TMP/run1"
 [ -f "$run1/anon/mapping.json" ] || fail "mapping.json missing"
 # shellcheck disable=SC2012  # counts files; behavior required by integration test
 count=$(ls "$run1"/anon/response-*.md | wc -l | tr -d ' ')
-[ "$count" -eq 4 ] || fail "expected 4 anon responses, got $count"
+[ "$count" -eq 5 ] || fail "expected 5 anon responses, got $count"
 grep -q '"response-A"' "$run1/anon/mapping.json" || fail "mapping.json lacks response-A key"
 
 # 4. fail-soft: one member fails, council proceeds with 3
@@ -41,8 +42,10 @@ COUNCIL_MOCK_FAIL=codex "$COUNCIL" --mock --run-dir "$run2" dispatch "$TMP/promp
   || fail "fail-soft dispatch rc=$?"
 # shellcheck disable=SC2012  # counts files; behavior required by integration test
 count=$(ls "$run2"/anon/response-*.md | wc -l | tr -d ' ')
-[ "$count" -eq 3 ] || fail "expected 3 anon responses after 1 failure, got $count"
+[ "$count" -eq 4 ] || fail "expected 4 anon responses after 1 failure, got $count"
 [ -f "$run2/meta/codex.failed" ] || fail "codex failure not recorded in meta/"
+[ ! -f "$run2/responses/codex.md" ] || fail "failed member's partial output must not remain in responses/"
+[ -s "$run2/meta/codex.partial" ] || fail "failed member's partial output must be preserved as meta/codex.partial"
 
 # 5. dry-run prints commands and writes no responses
 run3="$TMP/run3"
@@ -60,7 +63,7 @@ grep -q "response-A" "$run1/review-prompt.md" || fail "bundle lacks anonymized r
 [ -s "$run1/reviews/claude.md" ] || fail "claude review missing"
 # shellcheck disable=SC2012  # counts files; behavior required by integration test
 count=$(ls "$run1"/reviews/*.md | wc -l | tr -d ' ')
-[ "$count" -eq 4 ] || fail "expected 4 reviews, got $count"
+[ "$count" -eq 5 ] || fail "expected 5 reviews, got $count"
 
 # 7. review without a dispatched run dir -> hard error
 rc=0
@@ -129,5 +132,21 @@ rc=0
   size=$(wc -c < "$trunc_dir/out/claude.md" | tr -d ' ')
   [ "$size" -eq 100 ] || fail "truncation: expected claude.md capped at 100 bytes, got $size"
 ) || fail "truncation subshell failed"
+
+# --- Fix pass 2: watchdog must escalate TERM -> KILL ---
+
+# 12. a member that traps/ignores SIGTERM must still die within the grace window
+(
+  set -euo pipefail
+  # shellcheck disable=SC1090  # dynamic path to council.sh in this dir; verified to exist above
+  source "$COUNCIL"
+  start=$(date +%s)
+  rc=0
+  run_with_timeout 1 bash -c 'trap "" TERM; sleep 20' || rc=$?
+  end=$(date +%s)
+  elapsed=$((end - start))
+  [ "$rc" -ne 0 ] || fail "kill escalation: expected non-zero rc for a TERM-ignoring command, got 0"
+  [ "$elapsed" -lt 15 ] || fail "kill escalation: expected elapsed <15s for a TERM-ignoring command, got ${elapsed}s"
+) || fail "kill escalation subshell failed"
 
 echo "ALL TESTS PASSED"

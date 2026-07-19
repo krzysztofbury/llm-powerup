@@ -12,7 +12,7 @@
 set -euo pipefail
 shopt -s nullglob
 
-KNOWN_MEMBERS="claude codex gemini opencode"
+KNOWN_MEMBERS="agy claude codex gemini opencode"
 TIMEOUT_SECS=300
 OUTPUT_CAP_BYTES=65536
 # gemini/opencode receive the prompt as a single argv argument (not stdin).
@@ -94,7 +94,10 @@ run_with_timeout() {
   # which silently starves stdin-consuming members (claude, codex).
   "$@" 0<&0 &
   local pid=$!
-  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) &
+  # TERM first, then KILL after a 5 s grace period: interactive/auth prompts
+  # in member CLIs have been observed to survive a lone TERM (readline traps),
+  # which would make wait below unbounded. KILL cannot be trapped.
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null; sleep 5; kill -KILL "$pid" 2>/dev/null ) &
   local watcher=$!
   local rc=0
   wait "$pid" || rc=$?
@@ -108,6 +111,7 @@ member_command_string() {
   local member="$1" prompt_file="$2"
   # shellcheck disable=SC2016  # the $(cat %s) in single quotes is intentional: human-readable command string for --dry-run
   case "$member" in
+    agy)      printf 'agy --mode plan -p "$(cat %s)"' "$prompt_file" ;;
     claude)   printf 'claude -p --allowedTools Read Grep Glob --disallowedTools Bash Edit Write NotebookEdit WebFetch WebSearch Task < %s' "$prompt_file" ;;
     codex)    printf 'codex exec -s read-only --skip-git-repo-check - < %s' "$prompt_file" ;;
     gemini)   printf 'gemini --approval-mode plan -o text -p "$(cat %s)"' "$prompt_file" ;;
@@ -122,6 +126,9 @@ dispatch_one() {
   local member="$1" prompt_file="$2" out_file="$3" err_file="$4" secs="$5"
   if [ "$MOCK" = "1" ]; then
     if [ "$member" = "${COUNCIL_MOCK_FAIL:-}" ]; then
+      # Real CLIs have been observed to emit partial output (e.g. an
+      # interactive auth prompt) before failing; the mock mirrors that.
+      printf 'partial mock output from %s before failure\n' "$member" > "$out_file"
       echo "mock failure for $member" > "$err_file"
       return 1
     fi
@@ -129,7 +136,7 @@ dispatch_one() {
     return 0
   fi
   case "$member" in
-    gemini|opencode)
+    agy|gemini|opencode)
       local size
       size=$(wc -c < "$prompt_file" | tr -d ' ')
       if [ "$size" -gt "$ARG_SIZE_WARN_BYTES" ]; then
@@ -138,6 +145,9 @@ dispatch_one() {
       ;;
   esac
   case "$member" in
+    agy)
+      run_with_timeout "$secs" agy --mode plan -p "$(cat "$prompt_file")" \
+        < /dev/null > "$out_file" 2> "$err_file" ;;
     claude)
       run_with_timeout "$secs" claude -p --allowedTools Read Grep Glob \
         --disallowedTools Bash Edit Write NotebookEdit WebFetch WebSearch Task \
@@ -147,10 +157,10 @@ dispatch_one() {
         < "$prompt_file" > "$out_file" 2> "$err_file" ;;
     gemini)
       run_with_timeout "$secs" gemini --approval-mode plan -o text -p "$(cat "$prompt_file")" \
-        > "$out_file" 2> "$err_file" ;;
+        < /dev/null > "$out_file" 2> "$err_file" ;;
     opencode)
       run_with_timeout "$secs" opencode run --agent plan "$(cat "$prompt_file")" \
-        > "$out_file" 2> "$err_file" ;;
+        < /dev/null > "$out_file" 2> "$err_file" ;;
     *)
       echo "unknown member: $member" > "$err_file"; return 64 ;;
   esac
@@ -174,7 +184,14 @@ fan_out() {
         log "$m returned empty output"
       else
         echo "$rc" > "$meta_dir/$m.failed"
-        log "$m failed with rc=$rc (stderr: $meta_dir/$m.err)"
+        if [ -s "$out_dir/$m.md" ]; then
+          # A failed member's partial output must not enter the anonymized
+          # council set; preserve it for diagnosis instead of dropping it.
+          mv "$out_dir/$m.md" "$meta_dir/$m.partial"
+          log "$m failed with rc=$rc; partial output preserved in $meta_dir/$m.partial"
+        else
+          log "$m failed with rc=$rc (stderr: $meta_dir/$m.err)"
+        fi
       fi
     ) &
   done
@@ -195,7 +212,7 @@ fan_out() {
 anonymize() {
   local run_dir="$1"
   mkdir -p "$run_dir/anon"
-  local labels="A B C D" shuffled f member label first=1
+  local labels="A B C D E" shuffled f member label first=1
   shuffled=$(find "$run_dir/responses" -type f -name '*.md' -size +0c \
     | awk 'BEGIN{srand()}{print rand() "\t" $0}' | sort -n | cut -f2-)
   {
@@ -212,6 +229,9 @@ anonymize() {
     done
     printf '\n}\n'
   } > "$run_dir/anon/mapping.json"
+  if [ -n "$shuffled" ]; then
+    log "warning: more responses than anonymization labels ($labels); not anonymized: $shuffled"
+  fi
 }
 
 cmd_dispatch() {

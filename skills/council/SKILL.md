@@ -1,7 +1,7 @@
 ---
 name: council
-description: Convene a council of installed agent CLIs (claude, codex, gemini, opencode) on one hard problem - parallel independent opinions, optional anonymized peer ranking, chairman synthesis. Use for high-stakes decisions, architecture trade-offs, contested reviews, or questions where one model's blind spots matter.
-compatibility: Requires at least two authenticated CLIs among claude, codex, gemini, opencode, and a POSIX shell with bash.
+description: Convene a council of installed agent CLIs (agy, claude, codex, gemini, opencode) on one hard problem - parallel independent opinions, optional anonymized peer ranking, chairman synthesis. Use for high-stakes decisions, architecture trade-offs, contested reviews, or questions where one model's blind spots matter.
+compatibility: Requires at least two authenticated CLIs among agy, claude, codex, gemini, opencode, and a POSIX shell with bash.
 ---
 
 # Council
@@ -62,7 +62,9 @@ prompt and show it to the user before dispatching.
 - A member's failure or timeout is recorded in `<run-dir>/meta/`; name the
   missing member in your synthesis so the user knows the bench was short.
   Review-stage (peer-ranking) failures are recorded the same way in
-  `<run-dir>/reviews-meta/`.
+  `<run-dir>/reviews-meta/`. A failed member's partial output, if any, is
+  preserved as `meta/<member>.partial` — diagnostic material, never a
+  council opinion.
 - Malformed or truncated output: quote it verbatim with a warning; never
   silently drop a member's response.
 
