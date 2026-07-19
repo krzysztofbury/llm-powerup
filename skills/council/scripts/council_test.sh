@@ -43,6 +43,12 @@ count=$(ls "$run1"/anon/response-*.md | wc -l | tr -d ' ')
 [ "$count" -eq 5 ] || fail "expected 5 anon responses, got $count"
 grep -q '"response-A"' "$run1/anon/mapping.json" || fail "mapping.json lacks response-A key"
 
+# 3b. dispatch pins the member role: members receive preamble + original problem
+[ -f "$run1/member-prompt.md" ] || fail "member-prompt.md missing"
+grep -q "one independent member" "$run1/member-prompt.md" || fail "member role preamble missing"
+grep -q "capital of France" "$run1/member-prompt.md" || fail "original problem missing from member-prompt.md"
+grep -q "one independent member" "$run1/responses/claude.md" || fail "mock member did not receive the pinned prompt"
+
 # 4. fail-soft: one member fails, council proceeds with 3
 run2="$TMP/run2"
 COUNCIL_MOCK_FAIL=codex "$COUNCIL" --mock --members "agy claude codex gemini opencode" --run-dir "$run2" dispatch "$TMP/prompt.md" >/dev/null \

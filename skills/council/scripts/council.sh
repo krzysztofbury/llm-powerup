@@ -280,17 +280,35 @@ cmd_dispatch() {
   mkdir -p "$run_dir/responses" "$run_dir/meta"
   cp "$prompt_file" "$run_dir/prompt.md"
 
+  # Pin the member role. Members are full agent CLIs and may have their own
+  # Agent Skills installed — including this council skill itself, in which
+  # case a council-shaped brief makes the member role-play the chairman and
+  # answer with a consent gate instead of an opinion (observed live with
+  # codex). The preamble forbids that explicitly.
+  {
+    echo "You are one independent member of a multi-model council. Answer the"
+    echo "problem below directly, as a single expert opinion, in your own words."
+    echo "Do NOT invoke any council or committee skill, tool, or workflow of"
+    echo "your own; do not convene other models; do not display a consent or"
+    echo "approval gate (the operator already approved this dispatch); do not"
+    echo "ask for further input. Just answer the problem."
+    echo
+    echo "# Problem"
+    echo
+    cat "$run_dir/prompt.md"
+  } > "$run_dir/member-prompt.md"
+
   if [ "$DRY_RUN" = "1" ]; then
     local m
     for m in $members; do
-      printf '%s: %s\n' "$m" "$(member_command_string "$m" "$run_dir/prompt.md")"
+      printf '%s: %s\n' "$m" "$(member_command_string "$m" "$run_dir/member-prompt.md")"
     done
     echo "$run_dir"
     return 0
   fi
 
   log "dispatching to: $members (timeout ${TIMEOUT_SECS}s each)"
-  fan_out "$run_dir/prompt.md" "$run_dir/responses" "$run_dir/meta" "$members"
+  fan_out "$run_dir/member-prompt.md" "$run_dir/responses" "$run_dir/meta" "$members"
 
   local collected=0 f
   for f in "$run_dir"/responses/*.md; do
@@ -318,6 +336,8 @@ cmd_review() {
     echo "You are one anonymous member of an LLM council. Below is a problem"
     echo "and the anonymized responses of all council members (possibly"
     echo "including your own — you cannot tell)."
+    echo "Do NOT invoke any council or committee skill, tool, or workflow of"
+    echo "your own; do not display a consent or approval gate; answer directly."
     echo
     echo "# Original problem"
     echo

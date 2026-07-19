@@ -31,7 +31,10 @@ prompt and show it to the user before dispatching.
    Tell the user who sits on the council.
 2. Write the problem to a prompt file in a temp directory (never in the repo).
    Make it self-contained: the members have no conversation context. State the
-   question, constraints, and desired output format.
+   question, constraints, and desired output format. Write the bare problem
+   only — the runner wraps it in a member-role preamble (members are full
+   agent CLIs and may have this very skill installed; the preamble stops them
+   from role-playing the chairman).
 3. Stage 1 — opinions: `scripts/council.sh dispatch <prompt-file>`.
    The last stdout line is the run directory. Exit 2 means fewer than two
    usable responses: report the contents of `<run-dir>/meta/*.err` verbatim
@@ -67,6 +70,11 @@ prompt and show it to the user before dispatching.
   council opinion.
 - Malformed or truncated output: quote it verbatim with a warning; never
   silently drop a member's response.
+- A meta-response — a consent/approval gate, an attempt to convene its own
+  council, or skill boilerplate instead of an answer — is NOT an opinion.
+  Treat that member as failed in your synthesis. If real opinions drop below
+  two, re-dispatch once with `--members` seating the failed member's fallback
+  partner (opencode for codex, gemini for agy) plus the members that answered.
 
 ## Tuning
 
