@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- `AGENTS.md`: portable, harness-agnostic base rulebook (verification and
+  deployment, production log preflight, editing and testing, deliverable
+  hygiene) for symlinking as CLAUDE.md / AGENTS.md across harnesses.
 - `retro` skill: end-of-session retrospective that turns lessons into system
   changes (skill/checklist/config diffs) with an append-only ledger, a
   two-strikes rule against skill sprawl, and an approval gate for edits.
