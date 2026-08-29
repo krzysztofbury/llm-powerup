@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- `retro` skill: end-of-session retrospective that turns lessons into system
+  changes (skill/checklist/config diffs) with an append-only ledger, a
+  two-strikes rule against skill sprawl, and an approval gate for edits.
 - `council` skill: convene installed agent CLIs (Claude, Codex, Gemini,
   OpenCode) as a multi-model council over headless, read-only sessions —
   parallel dispatch, anonymized peer ranking, and chairman synthesis.
