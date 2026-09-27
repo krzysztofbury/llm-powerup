@@ -74,7 +74,7 @@ upper_query=$(printf '%s' "$query" | tr '[:lower:]' '[:upper:]')
 # WITH can contain data-modifying CTEs. Require confirmation rather than trying
 # to parse SQL in a shell hook.
 if [[ ! "$upper_query" =~ ^[[:space:]]*(SELECT|SHOW|EXPLAIN)[[:space:]] ]] \
-  || [[ "$upper_query" =~ EXPLAIN[[:space:]]+ANALYZE ]] \
+  || [[ "$upper_query" =~ EXPLAIN[[:space:]]+(ANALYZE|\([^\)]*ANALYZE) ]] \
   || [[ "$upper_query" =~ \;[[:space:]]*[^[:space:]] ]] \
   || [[ "$upper_query" =~ [[:space:]](INTO|FOR[[:space:]]+(UPDATE|SHARE)|NO[[:space:]]+KEY[[:space:]]+UPDATE)[[:space:]] ]] \
   || [[ "$upper_query" =~ (^|[^[:alnum:]_])(PG_TERMINATE_BACKEND|PG_CANCEL_BACKEND|PG_ADVISORY_LOCK|PG_TRY_ADVISORY_LOCK|PG_RELOAD_CONF|PG_ROTATE_LOGFILE|PG_CREATE_RESTORE_POINT|PG_LOGICAL_EMIT_MESSAGE|PG_SLEEP|NEXTVAL|SETVAL|SET_CONFIG|DBLINK_CONNECT|DBLINK_EXEC|PG_READ_FILE|PG_READ_BINARY_FILE|LO_IMPORT|LO_EXPORT)([^[:alnum:]_]|$) ]]; then

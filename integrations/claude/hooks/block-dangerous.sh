@@ -24,6 +24,9 @@ command=$(printf '%s' "$input" | jq -er '.tool_input.command // empty') \
   || ask "Could not inspect the Bash command."
 [[ -n "$command" ]] || ask "Bash command is empty or unavailable."
 shopt -s nocasematch
+# Recognize common global flags and their values, including -C and --context.
+# This remains a best-effort confirmation gate, not a shell parser or sandbox.
+global_flags='([[:space:]]+--?[^[:space:];|&]+([[:space:]]+[^[:space:];|&-]+)?)*'
 
 # This is deliberately conservative. It is a confirmation gate, not a parser.
 if [[ "$command" =~ (^|[[:space:];\\|&])(sudo[[:space:]]+)?(command[[:space:]]+)?(/usr/bin/|/bin/)?rm[[:space:]] ]]; then
@@ -42,14 +45,14 @@ fi
 if [[ "$command" =~ find[[:space:]].*-delete([[:space:]]|$) ]]; then
   ask "find -delete removes files; confirm the target and scope."
 fi
-if [[ "$command" =~ git[[:space:]]+reset.*--hard|git[[:space:]]+clean.*(-[a-zA-Z]*f|--force)|git[[:space:]]+(checkout|restore)([[:space:]]+[^[:space:]]+)*[[:space:]]+\.([[:space:]]|$)|git[[:space:]]+push.*(--force([[:space:]]|$)|-f([[:space:]]|$)) ]]; then
+if [[ "$command" =~ git${global_flags}[[:space:]]+reset[^\;\|\&]*--hard|git${global_flags}[[:space:]]+clean[^\;\|\&]*(-[a-zA-Z]*f|--force)|git${global_flags}[[:space:]]+(checkout|restore)([[:space:]]+[^[:space:]]+)*[[:space:]]+\.([[:space:]]|$)|git${global_flags}[[:space:]]+push[^\;\|\&]*(--force([[:space:]]|$)|-f([[:space:]]|$)) ]]; then
   ask "Git command can discard work or rewrite remote history."
 fi
 if [[ "$command" =~ (psql|mysql|mariadb|sqlite3|pgcli|mycli|cockroach|clickhouse-client|sqlcmd|usql) ]] \
   && [[ "$command" =~ (DROP|TRUNCATE|DELETE[[:space:]]+FROM|UPDATE|INSERT[[:space:]]+INTO|ALTER[[:space:]]+TABLE|CREATE[[:space:]]+(TABLE|INDEX|SCHEMA)|VACUUM[[:space:]]+FULL|REINDEX)[[:space:]] ]]; then
   ask "SQL command may change data or schema."
 fi
-if [[ "$command" =~ kubectl[[:space:]]+delete|terraform[[:space:]]+destroy|docker[[:space:]]+(system[[:space:]]+prune|rm|volume[[:space:]]+rm) ]]; then
+if [[ "$command" =~ kubectl${global_flags}[[:space:]]+delete|terraform${global_flags}[[:space:]]+destroy|docker${global_flags}[[:space:]]+(system[[:space:]]+prune|rm|volume[[:space:]]+rm) ]]; then
   ask "Infrastructure command may remove resources."
 fi
 
