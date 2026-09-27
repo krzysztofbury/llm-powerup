@@ -1,0 +1,139 @@
+{
+  "infobars": [],
+  "keys": [
+    {
+      "action": {
+        "controllers": ["Keypad", "Encoder"],
+        "disable_automatic_states": false,
+        "encoder": null,
+        "icon": "plugins/com.amansprojects.starterpack.sdPlugin/icons/switchProfile.png",
+        "name": "Switch Profile",
+        "plugin": "com.amansprojects.starterpack.sdPlugin",
+        "property_inspector": "plugins/com.amansprojects.starterpack.sdPlugin/propertyInspector/switchProfile.html",
+        "states": [{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/com.amansprojects.starterpack.sdPlugin/icons/switchProfile.png","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],
+        "supported_in_multi_actions": true,
+        "tooltip": "Switch the selected profile",
+        "uuid": "com.amansprojects.starterpack.switchprofile",
+        "visible_in_action_list": true
+      },
+      "children": null,
+      "context": "Keypad.0.0",
+      "current_state": 0,
+      "settings": {"device":"sd-DEVICE_ID","profile":"Default"},
+      "states": [{"alignment":"bottom","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/com.amansprojects.starterpack.sdPlugin/icons/switchProfile.png","image_scale":100,"name":"","show":true,"size":12,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"Back","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/pulse.svg","name":"Agent Pulse","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/pulse.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show agent attention status and focus the highest-priority agent","uuid":"dev.krzysztof.agents.pulse","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.1.0",
+      "current_state": 0,
+      "settings": {},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/pulse.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/quota.svg","name":"Codex Quota","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/quota.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show Codex 5-hour and 7-day quota remaining","uuid":"dev.krzysztof.agents.quota","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.2.0",
+      "current_state": 0,
+      "settings": {"codexExecutable":"codex","codexHome":"~/.codex","refreshMinutes":5},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/quota.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/activity.svg","name":"OpenCode Activity","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/activity.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show local OpenCode token activity","uuid":"dev.krzysztof.agents.activity","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.3.0",
+      "current_state": 0,
+      "settings": {"hours":24},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/activity.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/activity.svg","name":"OpenCode Activity","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/activity.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show local OpenCode token activity","uuid":"dev.krzysztof.agents.activity","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.4.0",
+      "current_state": 0,
+      "settings": {"hours":168},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/activity.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.5.0",
+      "current_state": 0,
+      "settings": {"slot":0},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.6.0",
+      "current_state": 0,
+      "settings": {"slot":1},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.7.0",
+      "current_state": 0,
+      "settings": {"slot":2},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.8.0",
+      "current_state": 0,
+      "settings": {"slot":3},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.9.0",
+      "current_state": 0,
+      "settings": {"slot":4},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.10.0",
+      "current_state": 0,
+      "settings": {"slot":5},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.11.0",
+      "current_state": 0,
+      "settings": {"slot":6},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.12.0",
+      "current_state": 0,
+      "settings": {"slot":7},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.13.0",
+      "current_state": 0,
+      "settings": {"slot":8},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    },
+    {
+      "action": {"controllers":["Keypad"],"disable_automatic_states":false,"encoder":null,"icon":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","name":"Agent Session","plugin":"dev.krzysztof.agents.sdPlugin","property_inspector":"","states":[{"alignment":"middle","background_colour":"#000000","colour":"#FFFFFF","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}],"supported_in_multi_actions":true,"tooltip":"Show and focus a Herdr agent session","uuid":"dev.krzysztof.agents.session","visible_in_action_list":true},
+      "children": null,
+      "context": "Keypad.14.0",
+      "current_state": 0,
+      "settings": {"slot":9},
+      "states": [{"alignment":"middle","background_colour":"#000000","colour":"#ffffff","family":"Liberation Sans","image":"plugins/dev.krzysztof.agents.sdPlugin/icons/session.svg","image_scale":100,"name":"","show":true,"size":16,"stroke_colour":"#000000","stroke_size":3,"style":"Regular","text":"","underline":false}]
+    }
+  ],
+  "sliders": []
+}

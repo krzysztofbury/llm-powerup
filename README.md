@@ -1,13 +1,16 @@
 # LLM Powerup
 
-Portable, production-minded Agent Skills and optional harness integrations for
-Claude Code, Codex, and OpenCode.
+Portable, production-minded Agent Skills and optional harness and tool
+integrations for Claude Code, Codex, and OpenCode.
 
 ## Contents
 
 - `skills/` contains portable [Agent Skills](https://agentskills.io/).
 - `integrations/claude/` contains optional Claude Code hooks. They do not apply
   to Codex or OpenCode.
+- `integrations/opendeck/` contains the [15-key Agents control surface](integrations/opendeck/README.md)
+  built on OpenDeck and used on Omarchy 4, with Herdr session focus, Codex quota,
+  and local OpenCode activity.
 
 ## Available Skills
 

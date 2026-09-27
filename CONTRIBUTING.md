@@ -3,7 +3,7 @@
 ## Before You Start
 
 Read [SPEC.md](SPEC.md). Keep each change focused and preserve the distinction
-between portable Agent Skills and harness-specific integrations.
+between portable Agent Skills and platform-specific integrations.
 
 Never contribute credentials, private domains, local paths, production logs,
 customer data, network snapshots, or copied private prompts.

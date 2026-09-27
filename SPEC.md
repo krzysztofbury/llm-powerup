@@ -2,9 +2,9 @@
 
 ## Scope
 
-This repository publishes portable Agent Skills and optional harness
+This repository publishes portable Agent Skills and optional harness and tool
 integrations. `skills/` must remain portable across Claude Code, Codex, and
-OpenCode. `integrations/` may use harness-specific behavior and must say so.
+OpenCode. `integrations/` may use platform-specific behavior and must say so.
 
 ## Safety And Privacy
 
@@ -23,7 +23,7 @@ OpenCode. `integrations/` may use harness-specific behavior and must say so.
 - `skills/<name>/SKILL.md`: Agent Skill entry point and public instructions.
 - `skills/<name>/references/`: focused supporting material loaded only when
   relevant.
-- `integrations/<harness>/`: optional integration code and installation guide.
+- `integrations/<platform>/`: optional integration code and installation guide.
 
 ## Validation
 

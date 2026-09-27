@@ -4,6 +4,9 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
+- OpenDeck Agents integration for a 15-key Stream Deck MK.2 on Omarchy 4:
+  the working plugin, a device-ID-templated Agents profile, setup instructions,
+  and tests for Herdr, Codex, OpenCode, and profile layout.
 - `AGENTS.md`: portable, harness-agnostic base rulebook (verification and
   deployment, production log preflight, editing and testing, deliverable
   hygiene) for symlinking as CLAUDE.md / AGENTS.md across harnesses.

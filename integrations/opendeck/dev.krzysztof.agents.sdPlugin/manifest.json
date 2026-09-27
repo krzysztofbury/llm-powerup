@@ -1,0 +1,42 @@
+{
+  "Actions": [
+    {
+      "Icon": "icons/pulse",
+      "Name": "Agent Pulse",
+      "UUID": "dev.krzysztof.agents.pulse",
+      "States": [{ "Image": "icons/pulse" }],
+      "Tooltip": "Show agent attention status and focus the highest-priority agent"
+    },
+    {
+      "Icon": "icons/session",
+      "Name": "Agent Session",
+      "UUID": "dev.krzysztof.agents.session",
+      "States": [{ "Image": "icons/session" }],
+      "Tooltip": "Show and focus a Herdr agent session"
+    },
+    {
+      "Icon": "icons/quota",
+      "Name": "Codex Quota",
+      "UUID": "dev.krzysztof.agents.quota",
+      "States": [{ "Image": "icons/quota" }],
+      "Tooltip": "Show Codex 5-hour and 7-day quota remaining"
+    },
+    {
+      "Icon": "icons/activity",
+      "Name": "OpenCode Activity",
+      "UUID": "dev.krzysztof.agents.activity",
+      "States": [{ "Image": "icons/activity" }],
+      "Tooltip": "Show local OpenCode token activity"
+    }
+  ],
+  "Author": "LLM Powerup",
+  "Category": "Agents",
+  "CategoryIcon": "icons/agents",
+  "CodePath": "plugin.js",
+  "Description": "Herdr agent state, Codex quota, and OpenCode activity for OpenDeck",
+  "Icon": "icons/agents",
+  "Name": "Agents",
+  "OS": [{ "Platform": "linux", "MinimumVersion": "1.0" }],
+  "Software": { "MinimumVersion": "2.14" },
+  "Version": "1.0.0"
+}
