@@ -36,6 +36,27 @@ installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
 - Exercise the actual runtime path or a smoke test, not just the unit suite,
   before shipping.
 
+## Scratch Space & Cleanup
+
+- Create disposable artifacts in a unique `mktemp -d` directory under a
+  harness-approved location. Never reuse a shared task directory.
+- For work contained in one shell invocation, install an `EXIT` cleanup
+  trap immediately after allocation, with handlers for `HUP`, `INT`, and
+  `TERM`. Wait for task processes to stop before deleting their files.
+- Keep temporary virtualenvs, copied databases, builds, and test archives
+  inside that directory; redirect child-process temporary files there too.
+- Keep Git worktrees, source changes, and durable deliverables outside
+  disposable scratch. Delete only paths allocated by the current task.
+- Copy only needed reports or failure diagnostics to a durable location
+  before cleanup. A failed task is not a reason to retain its entire build.
+- For scratch spanning multiple tool calls, record its path, task ownership,
+  and retention reason; clean it at task completion, including failure paths.
+- Before the final response, check for leftovers and report retained paths,
+  sizes, and reasons. Report cleanup failures; never escalate permissions or
+  delete another task's files to hide them.
+- Traps cannot cover `SIGKILL` or machine crashes. Do not promise cleanup for
+  those cases or add blanket age-based deletion without a separate safety plan.
+
 ## Content & Deliverables
 
 - Before writing anything into a repository (PR bodies, commit messages,
