@@ -27,6 +27,7 @@ jobs:
       - run: pip install pre-commit==4.2.0
       - run: pre-commit run --all-files
       - run: bash -n integrations/claude/hooks/*.sh
+      - run: node --test tests/hooks.test.mjs
       - run: shellcheck integrations/claude/hooks/*.sh
       - name: Test Claude guards
         run: |

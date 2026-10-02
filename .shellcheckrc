@@ -1,0 +1,2 @@
+# Hooks source their shared helper from the same directory.
+external-sources=true

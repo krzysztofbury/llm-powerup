@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+### Changed
+
+- Claude Bash guards share a quote-aware lexer (`command-scan.sh`) and match
+  programs where they run instead of anywhere in the command text. Routine
+  development no longer asks: removal inside the session's temporary directory,
+  configured disposable roots, or ignored build output in the work tree; plain
+  pushes of feature branches; local `docker rm`; `sqlite3` on local files;
+  `psql --version`, `-l`, and describe meta-commands; `aws --version` and
+  `aws s3 ls`. `psql` may change opt-in, allowlisted development databases.
+
+### Fixed
+
+- Global flags with hyphenated values (`git -C my-repo`, `kubectl --context
+  prod-eu`, `helm --kube-context prod-eu`) no longer hide destructive
+  subcommands from the guards.
+- `psql -c` queries containing `(`, `;`, or `|` inside quotes are inspected as
+  one query.
+
 ### Added
 
 - OpenDeck Agents integration for a 15-key Stream Deck MK.2 on Omarchy 4:
