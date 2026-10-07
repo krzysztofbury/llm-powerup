@@ -1,21 +1,35 @@
-<role>Act as an autonomous prompt optimization agent who applies Karpathy's autoresearch method to improve any Claude skill on autopilot.</role>
+# Bounded skill improvement loop
 
-<task>Run my skill through a continuous improvement loop — one change at a time, scored against my checklist, until it hits 90%+ consistently.</task>
+Improve one selected skill using [observed failures](01-why-skill-fails.md)
+and a [frozen rubric](02-skill-scoring-checklist.md). Preserve the original and
+write isolated candidate versions.
 
-<steps>
-1. Ask for my skill prompt and scoring checklist before starting
-2. Establish baseline — run the skill and score it against the checklist
-3. Identify the lowest-scoring checklist item — that's the first target
-4. Make one specific change to address it — nothing else
-5. Re-run and re-score — keep the change if score improves, revert if it doesn't
-6. Repeat until the skill hits 90%+ three times in a row
-</steps>
+## Before execution
 
-<rules>
-- One change per round — never fix two things simultaneously
-- Every change must be logged with the reason it was tried
-- Reverted changes must be documented — they are as valuable as kept ones
-- Original skill stays untouched — save improved version separately
-</rules>
+Agree on the dataset, development/held-out split, actual harness and model,
+provider/data scope, maximum rounds, wall-clock and cost/token budget, allowed
+tools and actions, regression gates and minimum meaningful improvement.
+If these are missing, propose them and wait before paid or provider calls.
+Use a finite round cap, not an open-ended target score.
 
-<output>Baseline Score → Round-by-Round Changes → Keep/Revert Log → Final Improved Skill → Changelog</output>
+## Each round
+
+1. Run the baseline and candidate on the same development inputs and environment.
+   Keep model, effort, tools, permissions and source snapshot fixed.
+2. Make one coherent change tied to a documented failure hypothesis.
+3. Score actual outputs. Record correctness, severe regressions, false findings,
+   user corrections, latency and usage alongside subjective human feedback.
+   Repeat ambiguous comparisons within the approved budget to assess variance.
+4. Keep or revert using the agreed criteria. Log the change, evidence and reason,
+   including unsuccessful candidates. Stop after two rounds without meaningful
+   improvement, a regression that invalidates the approach, or any budget cap.
+
+Evaluate the selected candidate on frozen held-out cases once. Use blind human
+comparison for subjective quality where feasible; an evaluator should not know
+which output is the candidate. A holdout failure is evidence to reconsider the
+candidate, not permission to tune repeatedly on the holdout. Obtain a new
+approved holdout for another cycle.
+
+Output: baseline, keep/revert log, held-out results, costs, uncertainties and
+candidate diff. User approval controls adoption. Never count imagined outputs
+as runs or claim a universal gain from one task set.

@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Scope verification rules to affected behavior and remove repeated procedure.
+  Requested implementation authorizes local edits; reviews remain read-only.
+- Narrow review and retrospective triggers, retain project-specific constraints,
+  and bound prompt-improvement experiments with held-out evaluation.
+- Council dispatch uses self-contained inputs, explicit model selection,
+  isolated adapters and per-run provenance rather than assuming CLI independence.
+
+### Fixed
+
+- Development PostgreSQL exemptions reject ambiguous URI, hostaddr, service and
+  mixed routing forms; inline credentials are checked before exemptions.
+- Quiet `find -delete` is limited to owned scratch. Artifact-like predicates
+  cannot establish that matched files are disposable.
+- Git config overrides cannot inherit the plain feature-push exemption.
+- OpenDeck retains failed-refresh and stale-sample status through cache hits.
+- CI checks every shell script separately and runs council and OpenDeck suites
+  with an explicit Node.js 24 runtime.
+
+## Earlier changes
+
 ### Changed
 
 - Claude Bash guards share a quote-aware lexer (`command-scan.sh`) and match

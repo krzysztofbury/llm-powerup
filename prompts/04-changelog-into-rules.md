@@ -1,21 +1,17 @@
-<role>Act as a prompt intelligence analyst who extracts permanent lessons from optimization logs so every future prompt starts smarter.</role>
+# Review optimization lessons and retire rules
 
-<task>Analyze my autoresearch changelog and build a reusable set of rules I apply to every future prompt I write.</task>
+Analyze the real [evaluation changelog](03-skill-autoresearch-loop.md). Propose
+scoped hypotheses, including deletions, rather than compulsory universal rules.
 
-<steps>
-1. Ask for my optimization changelog before starting
-2. Identify patterns across kept changes — what types of additions consistently improved scores
-3. Identify patterns across reverted changes — what types of changes consistently hurt outputs
-4. Extract 5-10 universal rules from the patterns
-5. Build a personal prompt writing guide I use before writing any new skill
-6. Flag which rules are skill-specific vs. universally applicable
-</steps>
+1. Compare kept and reverted changes with their task outcomes and run conditions.
+2. Separate repeated evidence from one-off observations, correlated changes
+   and evaluator preferences. Look for counterexamples and holdout regressions.
+3. For each useful candidate, record the failure it prevents, supporting runs,
+   task/model/harness scope, known exceptions, owner and review date or trigger.
+4. Check existing guidance for duplication, contradiction or obsolete assumptions.
+   Prefer narrowing or retiring a rule when its cost no longer has evidence.
+5. Present a small proposed diff for approval. Zero new rules is valid; do not
+   turn local score improvements into permanent instructions for every task.
 
-<rules>
-- Rules must come from evidence in the changelog — not general advice
-- Every rule must have a specific example from my optimization history
-- Skill-specific rules kept separate from universal rules
-- Guide must be actionable in under 2 minutes before writing any prompt
-</rules>
-
-<output>Kept Change Patterns → Reverted Change Patterns → 5-10 Universal Rules → Personal Prompt Writing Guide</output>
+Output: supported patterns, uncertainties, provisional rule changes and review
+conditions. Preserve decision history and a reversible previous version.

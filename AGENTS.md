@@ -6,25 +6,23 @@ installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
 
 ## Verification & Deployment
 
-- Never declare a fix "verified" or "successful" based on a quiet or low-load
-  window. Verify under representative load, or state explicitly that
-  verification is pending.
+- For load-sensitive fixes, verify under representative load. A quiet window
+  is not evidence; state explicitly when load verification is pending.
 - To confirm what is actually on the default branch or deployed, use remote
   evidence (`gh` CLI, `git ls-remote`, the hosting UI), never local SHA-based
   checks.
 - Before `gh pr merge`, compare the PR head (`gh pr view --json headRefOid`)
   with the SHA you pushed. A PR can lag behind the branch; merging a stale
   head ships half the work.
-- A UI or frontend change is not "done" without visual verification in a real
+- A visible UI change is not "done" without visual verification in a real
   browser. If a visual check is impossible, say so explicitly instead of
   claiming completion from grep or curl output.
 
 ## Production Investigation & Logs
 
-- Before any production log or cluster investigation, preflight the access
-  path: credentials valid, context set and reachable, VPN up. If anything is
-  invalid, stop and ask the user to re-authenticate instead of failing
-  mid-task.
+- Before production log or cluster work, check the required access path:
+  credentials, target context and VPN when used. If access fails, request
+  re-authentication before continuing dependent work.
 - An empty log or query result obtained through a filter (container name,
   label selector) is suspect: verify the filter matches actually running
   resources before concluding "no logs" or "no errors".
@@ -33,29 +31,26 @@ installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
 
 - After a batch of edits, re-check for formatter or lint side effects. An
   autofix pass can strip newly added imports even when tests pass.
-- Exercise the actual runtime path or a smoke test, not just the unit suite,
-  before shipping.
+- For behavior changes, exercise the affected runtime path or a smoke test.
+  Run required project checks; after they pass, repeat or broaden testing only
+  for new changes, failures or an unresolved risk.
+- Before a repository-wide regex substitution, list every match per pattern,
+  including hyphenated names, URLs, and link paths, then review the word diff.
 
 ## Scratch Space & Cleanup
 
 - Create disposable artifacts in a unique `mktemp -d` directory under a
   harness-approved location. Never reuse a shared task directory.
-- For work contained in one shell invocation, install an `EXIT` cleanup
-  trap immediately after allocation, with handlers for `HUP`, `INT`, and
-  `TERM`. Wait for task processes to stop before deleting their files.
-- Keep temporary virtualenvs, copied databases, builds, and test archives
-  inside that directory; redirect child-process temporary files there too.
+- Use a lifecycle helper or cleanup traps, including termination signals;
+  stop task processes before deleting their files. Keep child temporary files
+  inside the owned directory. Traps cannot cover SIGKILL or machine crashes.
+- Give tools that write to the current directory by default (`pip download`,
+  `curl -O`, `uv build`) an explicit scratch output path.
 - Keep Git worktrees, source changes, and durable deliverables outside
   disposable scratch. Delete only paths allocated by the current task.
-- Copy only needed reports or failure diagnostics to a durable location
-  before cleanup. A failed task is not a reason to retain its entire build.
-- For scratch spanning multiple tool calls, record its path, task ownership,
-  and retention reason; clean it at task completion, including failure paths.
-- Before the final response, check for leftovers and report retained paths,
-  sizes, and reasons. Report cleanup failures; never escalate permissions or
-  delete another task's files to hide them.
-- Traps cannot cover `SIGKILL` or machine crashes. Do not promise cleanup for
-  those cases or add blanket age-based deletion without a separate safety plan.
+- Record ownership for multi-call scratch; clean it on completion or failure.
+  Retain only useful deliverables. Report leftover paths, sizes, reasons and
+  cleanup failures; never delete another task's files or escalate to hide them.
 
 ## Content & Deliverables
 

@@ -172,7 +172,7 @@ test('ignored build output in the work tree can be removed', t => {
   const { repo, run } = fixture(t);
   assert.equal(run('block-dangerous', 'rm -rf dist node_modules'), undefined);
   assert.equal(run('block-dangerous', 'rm -f src/__pycache__/*.pyc'), undefined);
-  assert.equal(run('block-dangerous', "find . -name '*.pyc' -delete"), undefined);
+  assert.equal(run('block-dangerous', "find . -name '*.pyc' -delete"), 'ask');
   assert.equal(run('block-dangerous', "find . -name '*.log' -delete"), 'ask');
   // build/ is ignored but holds a tracked file.
   assert.equal(run('block-dangerous', 'rm -rf build'), 'ask');
@@ -181,6 +181,15 @@ test('ignored build output in the work tree can be removed', t => {
   assert.equal(run('block-dangerous', 'cd /tmp && rm -rf dist'), 'ask');
   assert.equal(run('block-dangerous', `docker exec app rm -rf ${repo}/dist`), 'ask');
   assert.equal(decision('block-dangerous', 'rm -rf dist'), 'ask');
+});
+
+test('artifact-like find matches never establish ownership', t => {
+  const { repo, run } = fixture(t);
+  writeFileSync(join(repo, 'tracked.pyc'), 'source fixture\n');
+  git(repo, 'add', '-f', 'tracked.pyc');
+  assert.equal(run('block-dangerous', "find . -name '*.pyc' -delete"), 'ask');
+  assert.equal(run('block-dangerous', 'find . -name build -delete'), 'ask');
+  assert.equal(run('block-dangerous', 'find . -name __pycache__ -delete'), 'ask');
 });
 
 test('sqlite3 on a work tree or session file is not gated', t => {
@@ -200,6 +209,10 @@ test('git push passes for feature branches and asks for protected or forced push
     'git push --force-with-lease origin feature/example', 'git push origin +feature/example',
     'git push origin --delete feature/example', 'git push origin :feature/example', 'git push --tags',
     'git push --mirror', 'cd /tmp && git push', 'git push origin "$branch"',
+    'git -c remote.origin.push=HEAD:main push origin',
+    'git -c push.default=matching push',
+    'git -c remote.origin.mirror=true push origin',
+    'git --config-env=remote.origin.push=PUSH_SPEC push origin',
   ]) {
     assert.equal(run('confirm-external-impact', command), 'ask', command);
   }
@@ -228,6 +241,35 @@ test('allowlisted development databases may be changed', t => {
   ]) {
     assert.equal(run('guard-readonly-postgres', command), 'ask', command);
   }
+});
+
+test('libpq routing overrides cannot inherit a development exemption', t => {
+  const { run } = fixture(t);
+  for (const command of [
+    "psql 'postgresql://localhost:5433/app_dev?host=prod' -c 'DELETE FROM example'",
+    "psql 'postgresql://localhost:5433/app_dev?hostaddr=192.0.2.1' -c 'DELETE FROM example'",
+    "PGHOSTADDR=192.0.2.1 psql -h localhost -p 5433 -d app_dev -c 'DELETE FROM example'",
+    "psql 'hostaddr=192.0.2.1 host=localhost port=5433 dbname=app_dev' -c 'DELETE FROM example'",
+    "psql 'postgresql://prod/app_prod' -h localhost -p 5433 -d app_dev -c 'DELETE FROM example'",
+    "psql -h localhost -p 5433 -d 'host=prod dbname=app_dev' -c 'DELETE FROM example'",
+    "sudo psql -h localhost -p 5433 -d app_dev -c 'DELETE FROM example'",
+  ]) {
+    for (const hook of ['guard-readonly-postgres', 'block-dangerous']) {
+      assert.equal(run(hook, command), 'ask', `${hook}: ${command}`);
+    }
+  }
+  for (const env of [{ PGHOSTADDR: '192.0.2.1' }, { PGSERVICE: 'production' }, { PGSERVICEFILE: '/example' }]) {
+    assert.equal(run('guard-readonly-postgres', "psql -h localhost -p 5433 -d app_dev -c 'DELETE FROM example'", { env }), 'ask');
+  }
+});
+
+test('inline credentials are checked before the development exemption', t => {
+  const { run } = fixture(t);
+  for (const command of [
+    "PGPASSWORD=example psql -h localhost -p 5433 -d app_dev -c 'SELECT 1'",
+    "psql postgresql://user:example@localhost:5433/app_dev -c 'SELECT 1'",
+    "psql 'host=localhost port=5433 dbname=app_dev password=example' -c 'SELECT 1'",
+  ]) assert.equal(run('guard-readonly-postgres', command), 'ask', command);
 });
 
 test('a missing helper fails closed', t => {

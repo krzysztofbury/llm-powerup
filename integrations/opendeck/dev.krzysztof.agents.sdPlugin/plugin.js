@@ -227,7 +227,7 @@ function normalizeQuota(value) {
     .sort((left, right) => (left.durationMinutes ?? Infinity) - (right.durationMinutes ?? Infinity));
 }
 
-function renderQuota(windows, error) {
+function renderQuota(windows, error, lastSuccess) {
   if (!windows) {
     return renderCard({
       accent: error ? COLORS.blocked : COLORS.working,
@@ -238,11 +238,14 @@ function renderQuota(windows, error) {
   }
   const minimum = Math.min(...windows.map((window) => window.remainingPercent));
   const accent = error ? COLORS.working : minimum <= 20 ? COLORS.blocked : minimum <= 50 ? COLORS.working : COLORS.done;
+  const age = Number.isFinite(lastSuccess)
+    ? `${durationLabel(Math.max(0, Math.floor((Date.now() - lastSuccess) / 60_000)))} old`
+    : 'STALE';
   return renderCard({
     accent,
     title: error ? 'CODEX STALE' : 'CODEX LEFT',
     main: windows.map((window) => `${window.remainingPercent}%`).join(' | '),
-    footer: `${windows.map((window) => durationLabel(window.durationMinutes)).join(' | ')}${error ? ' | STALE' : ''}`,
+    footer: `${windows.map((window) => durationLabel(window.durationMinutes)).join(' | ')}${error ? ` | ${age}` : ''}`,
   });
 }
 
@@ -472,16 +475,24 @@ async function refreshHerdr() {
   }
 }
 
+function renderQuotaContexts(refreshMinutes) {
+  const expired = latestQuota && Date.now() - lastQuotaRefresh >= refreshMinutes * 60_000;
+  const image = renderQuota(latestQuota, latestQuotaError || (expired ? 'Quota refresh overdue' : undefined), lastQuotaRefresh);
+  for (const [context, instance] of contexts) {
+    if (instance.action === ACTIONS.quota) setImage(context, image);
+  }
+}
+
 async function refreshQuota(force = false) {
   const quotaContexts = [...contexts.entries()].filter(([, instance]) => instance.action === ACTIONS.quota);
-  if (!quotaContexts.length || quotaRefreshPending) return;
+  if (!quotaContexts.length) return;
   const refreshMinutes = Math.max(1, Math.min(1440, Number(quotaContexts[0][1].settings.refreshMinutes) || 5));
+  renderQuotaContexts(refreshMinutes);
+  if (quotaRefreshPending) return;
   if (!force && latestQuota && Date.now() - lastQuotaRefresh < refreshMinutes * 60_000) {
-    for (const [context] of quotaContexts) setImage(context, renderQuota(latestQuota));
     return;
   }
   quotaRefreshPending = true;
-  for (const [context] of quotaContexts) setImage(context, renderQuota(latestQuota, latestQuotaError));
   try {
     latestQuota = await fetchCodexQuota(quotaContexts[0][1].settings);
     latestQuotaError = undefined;
@@ -491,7 +502,7 @@ async function refreshQuota(force = false) {
     console.error('[Agents] Codex quota refresh failed:', error.message);
   } finally {
     quotaRefreshPending = false;
-    for (const [context] of quotaContexts) setImage(context, renderQuota(latestQuota, latestQuotaError));
+    renderQuotaContexts(refreshMinutes);
   }
 }
 

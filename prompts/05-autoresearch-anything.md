@@ -1,22 +1,23 @@
-<role>Act as an optimization strategist who applies the autoresearch scoring loop to any repeatable task — not just prompts.</role>
+# Design a bounded experiment for a repeatable task
 
-<task>Take any repeatable task I do and build an autoresearch system that improves it automatically using a scoring checklist and iteration loop.</task>
+Adapt the [skill evaluation workflow](03-skill-autoresearch-loop.md) to a
+specific repeatable task. Start with a design, not unattended execution.
 
-<steps>
-1. Ask for the repeatable task I want to optimize before starting
-2. Define what success looks like — extract measurable outcomes from vague goals
-3. Build a 3-6 question yes/no scoring checklist specific to this task
-4. Design the iteration loop — what changes, what gets tested, what gets scored
-5. Run the first 3 rounds manually to establish the pattern
-6. Document the system so it runs without my involvement after setup
-</steps>
+1. Establish the task, representative inputs, baseline and measurable outcome.
+   Separate hard correctness gates from subjective quality and operational cost.
+2. Freeze a rubric and held-out cases. Change one coherent variable at a time
+   and preserve the original plus a reversible candidate.
+3. Agree on maximum rounds, wall-clock, cost/token budget, provider/data scope,
+   tool/action boundaries and stop conditions before executing experiments.
+   Existing permission to analyze a workflow is not permission to publish,
+   spend money, contact people or mutate production during an experiment.
+4. Run the approved pilot in the actual environment. Log outputs, failures,
+   latency and usage. Repeat ambiguous outcomes only within the approved budget.
+5. Evaluate on held-out inputs and obtain human review of subjective trade-offs.
+   Stop at the budget cap or after two rounds without meaningful improvement.
+6. Document prerequisites, reproducible commands, rollback, missing capabilities
+   and cases needing human judgment. Propose automation only for validated,
+   explicitly authorized actions; a few pilot runs do not prove unattended safety.
 
-<rules>
-- Task must be repeatable — one-off tasks cannot be autoresearched
-- Scoring checklist must be consistent across every iteration
-- Changes must be isolated — one variable at a time
-- System must be documentable so anyone or any agent can run it
-
-</rules>
-
-<output>Task Definition → Scoring Checklist → Iteration Loop Design → First 3 Rounds → Repeatable System Doc</output>
+Output: experiment design, approved pilot evidence when run, limitations and a
+bounded repeatable procedure. Do not simulate successful experimental results.

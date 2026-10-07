@@ -8,15 +8,17 @@ OpenCode. `integrations/` may use platform-specific behavior and must say so.
 
 ## Safety And Privacy
 
-- Skills default to analysis and recommendations. External actions require
-  explicit user confirmation.
+- Reviews stay read-only. Implementation requests authorize the requested
+  local edits. External actions require authorization for their target and scope.
 - Do not add credentials, local paths, internal hosts, customer data, telemetry,
   network inventories, or unredacted logs.
 - Do not copy private prompts or operational patterns into public skills.
 - Database guidance is read-only by default and must omit query text, client
   addresses, role names, and application names unless explicitly authorized.
-- Hooks are guardrails, not security boundaries. They must fail safely by asking
-  for review when their input cannot be inspected.
+- Hooks detect known patterns, not arbitrary shell behavior. For recognized
+  commands, uncertain targets cannot use quiet-path exemptions. Document gaps
+  and runner failure behavior; permissions and least-privilege access enforce
+  boundaries independently.
 
 ## Repository Layout
 
@@ -31,7 +33,9 @@ Run before submitting a change:
 
 ```bash
 pre-commit run --all-files
-bash -n integrations/claude/hooks/*.sh
+while IFS= read -r -d '' file; do bash -n "$file"; done < <(git ls-files -z '*.sh')
+node --test tests/*.test.mjs integrations/opendeck/dev.krzysztof.agents.sdPlugin/test/*.test.js
+bash skills/council/scripts/council_test.sh
 ```
 
 Exercise every hook with safe and confirmation-required JSON fixtures. Review

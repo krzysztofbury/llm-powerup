@@ -43,6 +43,11 @@ age, and workload coverage.
 
 Only run vetted `SELECT`, `SHOW`, or non-analyzing `EXPLAIN` statements. Do not
 run arbitrary functions merely because they are invoked through `SELECT`.
+Use `psql -X` to avoid startup-file side effects and session-local diagnostic
+limits (for example, `statement_timeout=15s` and `lock_timeout=2s` through
+`PGOPTIONS`, preserving required existing options). If a diagnostic times out,
+report that limit and narrow the query before increasing it. These limits do
+not replace a read-only role.
 Use the focused reference that matches the investigation:
 
 - [workload and contention](references/workload-and-contention.md)

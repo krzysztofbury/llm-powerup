@@ -1,28 +1,30 @@
-# Council Skill — Design
+# Council Skill - Historical Design
 
 Date: 2026-07-19
-Status: Approved (design review with user)
+Status: Archived; superseded by the current skill and runner on 2026-10-07.
 Origin: Adaptation of the technique in [karpathy/llm-council](https://github.com/karpathy/llm-council)
 
 ## Problem
 
-A single model answers alone. karpathy/llm-council shows that fanning a query out
-to several models, letting them rank each other's anonymized answers, and
-synthesizing through a chairman produces materially better answers on hard,
-judgment-heavy questions. The original is a local web app (FastAPI + React +
+The design explores fanning a query out to several models, optional anonymous
+peer ranking and a chair's synthesis. Quality gains for this implementation
+have not been measured. The original is a local web app (FastAPI + React +
 OpenRouter). This design ports the technique to a portable Agent Skill: the
 harness session is the chairman, installed agent CLIs are the council members,
 and files are the storage. No server, no extra API keys.
 
-An advantage over the original: council members are CLI agents with read-only
-repo access, so on code questions each member can explore the codebase
-independently before answering. An API-only council cannot do that.
+The original repository-aware design below is obsolete. Current members receive
+only a self-contained payload through isolated harness adapters. See the
+[current skill](../../../skills/council/SKILL.md) and
+[CLI matrix](../../../skills/council/references/cli-matrix.md) for operational
+contracts. Current execution requires Bash, Node.js 20+ and authenticated CLIs;
+the historical zero-dependency claim is not an installation contract.
 
 ## Scope
 
 - Public, portable skill `skills/council/` in llm-powerup (branch
   `feat/council-skill`), compliant with SPEC.md portability and safety rules.
-- A personal overlay variant synced into the user's private llm-prompts repo.
+- Support for downstream overlays with additional local requirements.
   The overlay is standalone: no edits to other skills' routing tables.
 
 ## Decisions (resolved with user)

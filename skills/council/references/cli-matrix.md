@@ -1,39 +1,56 @@
-# Council CLI Matrix
+# Council CLI matrix
 
-Headless, read-only invocations used by `scripts/council.sh`. Verified against
-installed versions on 2026-07-19: agy 1.1.4, claude 2.1.215, codex 0.144.6,
-gemini 0.45.2, opencode 1.18.3. Product CLIs change — re-verify with `--help`
-before editing.
+Real dispatch supports Claude Code, Codex and OpenCode V2. Node.js 20+ and
+POSIX process groups are required. Each CLI receives a self-contained prompt
+on stdin in a fresh working directory. Recheck installed help after upgrades;
+unsupported flags fail the seat rather than weakening its isolation.
 
-| Member | Invocation | Read-only mechanism | Model override |
-| --- | --- | --- | --- |
-| agy | `agy --mode plan -p "$(cat prompt.md)"` | `plan` execution mode is read-only | `--model <model>` |
-| claude | `claude -p --allowedTools Read Grep Glob --disallowedTools Bash Edit Write NotebookEdit WebFetch WebSearch Task < prompt.md` | Allow+deny pair: `--allowedTools` grants the read-only set; `--disallowedTools` explicitly denies the state-changing/network tools. The deny list is required because `--allowedTools` is additive and does not override tools a repo's own `.claude/settings.json` might grant — a permissive or malicious project settings file could otherwise hand this headless session Bash/Edit. `--disallowedTools` wins over any settings-granted permission. | `--model <alias>` |
-| codex | `codex exec -s read-only --skip-git-repo-check - < prompt.md` | `read-only` sandbox policy; git check skipped so it runs in any directory | `-m <model>` |
-| gemini | `gemini --approval-mode plan -o text -p "$(cat prompt.md)"` | `plan` approval mode is read-only | `-m <model>` |
-| opencode | `opencode run --agent plan "$(cat prompt.md)"` | Built-in `plan` agent has editing disabled | `-m provider/model` |
+| Member | Isolation | Explicit model |
+| --- | --- | --- |
+| Claude | `--safe-mode --tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}' --setting-sources "" --no-session-persistence`; slash commands and Chrome disabled | `--model MODEL`, optional `--effort LEVEL` |
+| Codex | `--ignore-user-config --ignore-rules --strict-config --ephemeral -s read-only`; shell, exec, apps, plugins, hooks, delegation, browser, images, memory and skill discovery disabled; web search disabled, project document budget zero | `-m MODEL`, optional `model_reasoning_effort` |
+| OpenCode V2 | `run --standalone --agent council`; isolated config root, no inherited project config/MCP/user plugins, tool/context discovery plugins disabled, deny-all agent | `--model provider/model#variant` |
 
-## Notes
+Exact flags and environment live in `../scripts/member.mjs`. Authentication
+remains available without copying credentials into run output. Global-only
+custom OpenCode providers are unavailable; use an authenticated built-in
+provider or implement an explicitly reviewed adapter.
 
-- Prompt delivery: claude and codex read stdin; agy, gemini, and opencode take
-  the prompt as a single argv argument. On Linux, `MAX_ARG_STRLEN` caps any
-  single argument at ~128 KiB regardless of overall `ARG_MAX`, so review
-  bundles approaching the 65536-byte-per-member output cap times several
-  members can exceed it. `council.sh` logs a warning (does not block) when the
-  prompt file exceeds 100000 bytes and the member is agy, gemini, or opencode;
-  the resulting CLI failure is still recorded fail-soft in
-  `meta/<member>.failed`.
-- Each member runs with the caller's working directory, so on code questions
-  members can explore the repository read-only. Convene from the repo root.
-- Timeouts and output caps are enforced by `council.sh`
-  (`--timeout`, 65536-byte cap), not by the member CLIs.
-- All members must already be authenticated (interactive login done once by
-  the user). An unauthenticated CLI fails fail-soft and is recorded in
-  `meta/<member>.failed`.
-- `agy` is the Antigravity CLI — Google's successor path for gemini CLI users
-  (the free Gemini Code Assist tier was discontinued). Both rows are kept:
-  machines may have either installed.
-- Default bench preferences: when both members of a provider pair are
-  installed, `council.sh` seats only one — `agy` over `gemini`, `codex` over
-  `opencode` — and logs what it dropped. An explicit `--members` list
-  disables the preference logic entirely.
+OpenCode configuration uses native V2 `agents`, `permissions`, `mcp.servers`,
+`plugins`, `update` and `snapshots`. Root `model` excludes the variant; the
+agent and CLI retain it. Configuration/agent/provider/policy plugins remain
+enabled. User plugins, tools, instruction/skill discovery, warming and well-known
+discovery are disabled. Admin-managed policy may still apply.
+
+The adapter sets documented `OPENCODE_DISABLE_PROJECT_CONFIG=1` plus the
+compatibility `OPENCODE_CONFIG_PROJECT_DISABLE=true`. A model-free standalone
+server diagnostic on OpenCode 2.0.21 (2026-10-07) passed independently with each
+spelling and with both: ancestor config sentinel excluded, isolated council
+agent present with deny-all permissions, no inherited config/MCP/user plugins.
+The positive control, with both variables absent, discovered the ancestor
+sentinel, confirming that the isolation checks exercised config discovery.
+This tests effective configuration, not model requests or every environment.
+Recheck after upgrades. The normal background service is not isolation evidence.
+
+`meta/CLI.json` distinguishes requested models from IDs reported by the CLI.
+No reported ID means unverified. Alias availability depends on the account;
+three harness names may resolve to the same provider/model.
+
+The runner kills each POSIX process group with SIGKILL on timeout, overflow or
+INT/TERM/HUP cancellation, and kills remaining group members when the leader
+exits. Raw stdout/stderr are bounded while read (8 MiB combined, stderr 64 KiB);
+opinions over 64 KiB fail. This is not containment for processes deliberately
+escaping their groups, nor protection against runner SIGKILL or machine crashes.
+
+`manifest.json` records this dispatch's seat results and response hashes.
+Review validates hashes and reads only listed responses, reserves a single
+attempt and records `review-manifest.json`. Reruns require a new dispatch dir.
+Legacy directory reuse, repository-aware calls, implicit model defaults and
+brand-based seat elimination are intentionally removed. `agy` and `gemini`
+remain discoverable/mockable but real calls fail closed.
+
+References: [Claude CLI](https://code.claude.com/docs/en/cli-reference),
+[Codex CLI](https://developers.openai.com/codex/cli/reference),
+[OpenCode V2 config](https://opencode.ai/v2/docs/config),
+[instructions](https://opencode.ai/v2/docs/instructions),
+[plugins](https://opencode.ai/v2/docs/plugins).

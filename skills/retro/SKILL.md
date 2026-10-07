@@ -1,72 +1,62 @@
 ---
 name: retro
-description: End-of-session retrospective that turns lessons into system changes, not a diary. Use when the user says /retro, "I'm done", "wrap up the session", "podsumuj sesję", or asks what went well / badly and which skills, checklists, or configs should change. Works in any harness that reads Agent Skills (Claude Code, Codex, OpenCode, and similar) because the session transcript is already in the model's context.
+description: Review a session to propose improvements to skills, checklists or harness configuration. Use for explicit /retro or a request to improve the working process, not an ordinary session summary or sign-off.
 ---
 
 # Retro
 
-A session retrospective whose output is **diffs to your operating system**
-(skills, checklists, harness config), with an append-only ledger as the
-by-product. A retro that only writes reflections into a file nobody reads
-is theater; the deliverable is change.
+Turn supported lessons into approved changes. No change is a valid outcome.
+Use the session evidence already available; disclose gaps after compaction
+instead of reconstructing missing events or exporting the transcript.
 
 ## Configuration
 
-- `LEDGER`: path of the append-only retro log. Default: `RETRO.md` in the
-  current repository root. A personal variant of this skill may override it.
-- `MEMORY_INBOX` (optional): file for personal-knowledge candidates. If unset,
-  bucket (d) findings are shown to the user instead of written anywhere.
+- `LEDGER`: user-configured private log outside public/shared repositories.
+  If unset, present the entry in chat and ask for a destination only when the
+  user wants it saved. Do not silently create `RETRO.md` in the current repo.
+- `MEMORY_INBOX` (optional): configured destination for personal-knowledge
+  candidates, subject to its source/approval contract. Candidates are not facts.
 
-## Pipeline
+## Workflow
 
-1. **Review the session from your own context.** No exports, no APIs - you
-   were there. Answer concretely:
-   - What was the goal? Was it reached?
-   - What went well - and would have gone badly without which practice?
-   - Where did the user correct you, repeat themselves, or express friction?
-   - What failed, was retried, or was abandoned? Root cause, not symptom.
-   - Which skills/checklists were used? Which SHOULD have been used but were
-     not, or fired but gave bad guidance?
-2. **Classify each finding into exactly one bucket:**
-   - (a) update to an existing skill/checklist - include the concrete edit;
-   - (b) candidate for a NEW skill/checklist - see the two-strikes rule;
-   - (c) harness configuration - CLAUDE.md / AGENTS.md / hooks / permissions;
-   - (d) personal knowledge - facts about the user or project worth keeping.
-3. **Present one compact table:** finding -> bucket -> proposed change ->
-   target file. No essays. Skip empty buckets. If the session produced no
-   system-worthy findings, say so and append only a one-line ledger entry -
-   an honest "nothing to change" beats invented insight.
-4. **Approval gate.** File edits in buckets (a)-(c) happen only after the
-   user approves the table (they can approve a subset). Bucket (d) goes to
-   `MEMORY_INBOX` automatically when it is configured.
-5. **Apply approved edits**, then append one entry to `LEDGER` (newest on
-   top) recording findings and what actually changed.
+1. Review the goal, outcome, useful practices, user corrections, failures and
+   skill usage. Separate confirmed causes from hypotheses.
+2. Classify supported findings as existing skill/checklist changes, new-skill
+   candidates, harness configuration, or durable knowledge candidates.
+3. Show a compact table: finding, proposed change, evidence and target file.
+   Skip empty categories. Include removal or narrowing when warranted.
+4. Apply skill/configuration edits only after approval of the specific proposal;
+   approval may cover a subset. Route knowledge candidates through the configured
+   inbox contract, or present them in chat when no inbox is configured.
+5. Verify approved changes proportionately. Add a new entry at the top of the
+   configured ledger, preserving all prior entries. Record actual changes,
+   not planned ones. If no ledger is configured, return the entry in chat.
 
-## Two-strikes rule (anti-sprawl)
+## Avoid instruction accumulation
 
-Before proposing a NEW skill or checklist, search `LEDGER` for the same
-failure pattern. A first occurrence is logged as a candidate, nothing is
-created. Only a second occurrence earns creation - one-off pain is noise,
-repeated pain is a process gap. Corollary: prefer editing an existing skill
-over adding one, and prefer deleting a dead skill over keeping it. A retro
-that only ever adds files reproduces the mess it was built to fix.
+Before proposing a new skill, look for the same failure pattern in the available
+ledger. One occurrence supports a candidate; a second supports considering a
+skill. Missing history is not proof of recurrence. Prefer improving an existing
+workflow over adding a parallel one.
 
-## Ledger entry format
+For an existing rule, ask what recurring failure it prevents and what current
+evidence justifies its cost. Propose retirement, narrowing or consolidation if
+the cause disappeared, the harness changed, or the rule duplicates or conflicts
+with stronger guidance. Record the rule's scope, evidence and review date or
+trigger. Retire it only after approval, preserving the decision history.
+
+## Ledger entry
 
 ```markdown
-## YYYY-MM-DD · harness · project
-- Goal: <one line> (reached / partly / no)
-- Went well: <one line>
-- Friction: <one line, root cause>
-- Changes: <files edited, or "none">
-- Candidates: <new-skill candidates with occurrence count, or "none">
+## YYYY-MM-DD | harness | project
+- Goal: reached / partly / no
+- Helpful practice: evidence, or none
+- Friction: confirmed cause or hypothesis
+- Changes: actual files and retired rules, or none
+- Candidates: pattern and occurrence count, or none
+- Review: date or condition for revisiting changed rules
 ```
 
-## Boundaries
-
-- Never include secrets, credentials, or private personal content in a
-  ledger that lives inside a shared or public repository.
-- The retro reviews the session, not the person: findings name processes
-  and files, not blame.
-- Keep the whole retro under ~2 minutes of user attention: one table, one
-  approval, done.
+Keep secrets and personal information out of shared/public repositories.
+Describe processes and evidence, not blame. A concise table and the resulting
+diffs are enough; do not invent lessons to fill a template.

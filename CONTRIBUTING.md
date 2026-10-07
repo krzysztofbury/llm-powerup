@@ -16,10 +16,13 @@ customer data, network snapshots, or copied private prompts.
 
 ```bash
 pre-commit run --all-files
-bash -n integrations/claude/hooks/*.sh
+while IFS= read -r -d '' file; do bash -n "$file"; done < <(git ls-files -z '*.sh')
+node --test tests/*.test.mjs integrations/opendeck/dev.krzysztof.agents.sdPlugin/test/*.test.js
+bash skills/council/scripts/council_test.sh
 ```
 
-4. Test hooks with representative safe and confirmation-required payloads.
+4. Use Node.js 24 or newer for these checks. Test changed runtime paths with
+   representative inputs; council tests use fixture CLIs without model calls.
 5. Describe the user impact, privacy implications, and validation in the pull
    request.
 

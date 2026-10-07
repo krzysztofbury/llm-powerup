@@ -3,6 +3,8 @@ name: ubiquiti-advisor
 description: Reviews and troubleshoots a user-authorized UniFi network through a secure controller adapter. Use for UniFi devices, Wi-Fi, VLANs, firewall rules, clients, or network-audit requests.
 compatibility: Requires a user-authorized UniFi controller adapter with read-only endpoint allowlists.
 disable-model-invocation: true
+metadata:
+  opencode/autoinvoke: false
 ---
 
 # UniFi Network Advisor

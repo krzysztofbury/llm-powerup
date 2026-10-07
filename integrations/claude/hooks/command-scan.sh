@@ -5,7 +5,9 @@
 # Bash hooks. It splits a command into simple-command segments and words with
 # quotes removed. It is not a shell parser: words it cannot resolve statically
 # (parameter expansion, command substitution, escapes, brace expansion) are
-# flagged so that callers fail closed and request confirmation.
+# flagged so recognized commands cannot use quiet-path exemptions. Dynamic
+# executable names, scripts and unrecognized commands are not covered. This
+# detector is not an enforcement boundary or a complete shell interpreter.
 #
 # Source it; it defines functions and CS_* globals only and runs nothing.
 
@@ -536,7 +538,7 @@ cs_rm_safe() {
 
 # cs_find_safe SEGMENT: find at CS_I. Sets CS_REASON when it is not safe.
 cs_find_safe() {
-  local seg=$1 j end w delete=false has_name=false names_ok=true plain=true mindepth=0
+  local seg=$1 j end w delete=false has_name=false plain=true mindepth=0
   local -a starts=() start_flags=()
   end=${CS_END[seg]}
   j=$((CS_I + 1))
@@ -556,7 +558,6 @@ cs_find_safe() {
         ;;
       -name|-iname)
         j=$((j + 1)); has_name=true
-        cs_artifact_name "${CS_WORDS[j]:-}" || names_ok=false
         ;;
       -type|-maxdepth) j=$((j + 1)) ;;
       -mindepth) j=$((j + 1)); [[ "${CS_WORDS[j]:-0}" =~ ^[0-9]+$ ]] && mindepth=${CS_WORDS[j]} ;;
@@ -568,7 +569,7 @@ cs_find_safe() {
   CS_REASON="find -delete removes files; confirm the target and scope."
   [[ "$CS_VIA" != exec && "$CS_PRIV" == false ]] || return 1
   if (( ${#starts[@]} == 0 )); then starts=(.); start_flags=(""); fi
-  local all_disposable=true all_repo=true k
+  local all_disposable=true k
   for k in "${!starts[@]}"; do
     if ! cs_path_disposable "${starts[k]}" "${start_flags[k]}"; then
       if [[ "$has_name" == true || "$mindepth" -ge 1 ]]; then
@@ -577,10 +578,10 @@ cs_find_safe() {
         all_disposable=false
       fi
     fi
-    cs_path_in_repo "${starts[k]}" "${start_flags[k]}" equal || all_repo=false
   done
-  [[ "$all_disposable" == true ]] && return 0
-  [[ "$all_repo" == true && "$plain" == true && "$has_name" == true && "$names_ok" == true ]]
+  # A name predicate does not prove that actual matches are untracked or owned.
+  # Only task-owned scratch is eligible for quiet find -delete.
+  [[ "$all_disposable" == true && "$plain" == true ]]
 }
 
 # cs_sqlite_local SEGMENT: sqlite3 at CS_I works on an in-memory database or
@@ -610,20 +611,25 @@ cs_sqlite_local() {
 cs__pg_dbarg() {
   local value=$1 pair
   local -a pairs=()
-  local uri='^postgres(ql)?://([^@/?]*@)?([^/:?]*)(:([0-9]+))?(/([^?]*))?'
+  local uri='^postgres(ql)?://([A-Za-z0-9._-]+)(:([0-9]+))?/([A-Za-z0-9._-]+)$'
   if [[ "$value" =~ $uri ]]; then
-    cs__pg_host=${BASH_REMATCH[3]}; cs__pg_port=${BASH_REMATCH[5]}; cs__pg_db=${BASH_REMATCH[7]}
+    [[ -z "$cs__pg_host$cs__pg_port$cs__pg_db" ]] || return 1
+    cs__pg_host=${BASH_REMATCH[2]}; cs__pg_port=${BASH_REMATCH[4]}; cs__pg_db=${BASH_REMATCH[5]}
+    cs__pg_connection=true
   elif [[ "$value" == *=* ]]; then
+    [[ -z "$cs__pg_host$cs__pg_port$cs__pg_db" ]] || return 1
     read -ra pairs <<< "$value"
     for pair in ${pairs[@]+"${pairs[@]}"}; do
       case "$pair" in
-        host=*|hostaddr=*) cs__pg_host=${pair#*=} ;;
-        port=*) cs__pg_port=${pair#*=} ;;
-        dbname=*) cs__pg_db=${pair#*=} ;;
-        service=*) return 1 ;;
+        host=*) [[ -z "$cs__pg_host" ]] || return 1; cs__pg_host=${pair#*=} ;;
+        port=*) [[ -z "$cs__pg_port" ]] || return 1; cs__pg_port=${pair#*=} ;;
+        dbname=*) [[ -z "$cs__pg_db" ]] || return 1; cs__pg_db=${pair#*=} ;;
+        *) return 1 ;;
       esac
     done
+    cs__pg_connection=true
   else
+    [[ "$value" =~ ^[A-Za-z0-9._-]+$ && -z "$cs__pg_db" ]] || return 1
     cs__pg_db=$value
   fi
 }
@@ -635,8 +641,11 @@ cs__pg_dbarg() {
 # forward to a production database also listens there.
 cs_pg_dev_target() {
   local seg=$1 j end w f positional=0 file entry target
-  cs__pg_host=""; cs__pg_port=""; cs__pg_db=""
-  [[ "$CS_VIA" != exec ]] || return 1
+  cs__pg_host=""; cs__pg_port=""; cs__pg_db=""; cs__pg_connection=false
+  [[ "$CS_VIA" == direct && "$CS_PRIV" == false ]] || return 1
+  # libpq can route using these even when host/dbname are explicit. Do not
+  # partially interpret services or hostaddr, including inherited defaults.
+  [[ -z "${PGHOSTADDR:-}${PGSERVICE:-}${PGSERVICEFILE:-}" ]] || return 1
   end=${CS_END[seg]}
   for ((j = CS_START[seg]; j < CS_I; j++)); do
     w=${CS_WORDS[j]}
@@ -645,30 +654,32 @@ cs_pg_dev_target() {
       PGHOST=*) cs__pg_host=${w#*=} ;;
       PGPORT=*) cs__pg_port=${w#*=} ;;
       PGDATABASE=*) cs__pg_db=${w#*=} ;;
-      PGSERVICE=*|PGSERVICEFILE=*) return 1 ;;
+      PGHOSTADDR=*|PGSERVICE=*|PGSERVICEFILE=*|PGPASSWORD=*) return 1 ;;
     esac
   done
   for ((j = CS_I + 1; j < end; j++)); do
     w=${CS_WORDS[j]}; f=${CS_FLAGS[j]}
     case "$w" in
       -h|--host|-p|--port|-d|--dbname)
+        [[ "$cs__pg_connection" == false ]] || return 1
         j=$((j + 1))
         (( j < end )) && [[ "${CS_FLAGS[j]}" != *d* ]] || return 1
         case "$w" in
-          -h|--host) cs__pg_host=${CS_WORDS[j]} ;;
-          -p|--port) cs__pg_port=${CS_WORDS[j]} ;;
+          -h|--host) [[ -z "$cs__pg_host" ]] || return 1; cs__pg_host=${CS_WORDS[j]} ;;
+          -p|--port) [[ -z "$cs__pg_port" ]] || return 1; cs__pg_port=${CS_WORDS[j]} ;;
           *) cs__pg_dbarg "${CS_WORDS[j]}" || return 1 ;;
         esac
         ;;
       -c|--command|-f|--file|-U|--username|-v|--set|--variable|-o|--output|-L|--log-file|-F|--field-separator|-R|--record-separator|-P|--pset|-T|--table-attr) j=$((j + 1)) ;;
       --host=*|--port=*|--dbname=*|-h?*|-p?*|-d?*)
+        [[ "$cs__pg_connection" == false ]] || return 1
         [[ "$f" != *d* ]] || return 1
         case "$w" in
-          --host=*) cs__pg_host=${w#*=} ;;
-          --port=*) cs__pg_port=${w#*=} ;;
+          --host=*) [[ -z "$cs__pg_host" ]] || return 1; cs__pg_host=${w#*=} ;;
+          --port=*) [[ -z "$cs__pg_port" ]] || return 1; cs__pg_port=${w#*=} ;;
           --dbname=*) cs__pg_dbarg "${w#*=}" || return 1 ;;
-          -h*) cs__pg_host=${w#-h} ;;
-          -p*) cs__pg_port=${w#-p} ;;
+          -h*) [[ -z "$cs__pg_host" ]] || return 1; cs__pg_host=${w#-h} ;;
+          -p*) [[ -z "$cs__pg_port" ]] || return 1; cs__pg_port=${w#-p} ;;
           -d*) cs__pg_dbarg "${w#-d}" || return 1 ;;
         esac
         ;;
@@ -682,8 +693,10 @@ cs_pg_dev_target() {
         ;;
     esac
   done
-  [[ -n "$cs__pg_host" && -n "$cs__pg_db" ]] || return 1
+  [[ "$cs__pg_host" =~ ^[A-Za-z0-9._-]+$ && "$cs__pg_db" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
+  [[ -n "$cs__pg_port" || -z "${PGPORT:-}" ]] || return 1
   [[ -n "$cs__pg_port" ]] || cs__pg_port=5432
+  [[ "$cs__pg_port" =~ ^[0-9]+$ ]] || return 1
   target=$(printf '%s' "$cs__pg_host" | tr '[:upper:]' '[:lower:]'):$cs__pg_port/$cs__pg_db
   file=${CLAUDE_HOOK_POSTGRES_DEV_TARGETS:-${XDG_CONFIG_HOME:-$HOME/.config}/claude-hooks/postgres-dev-targets}
   [[ -f "$file" ]] || return 1

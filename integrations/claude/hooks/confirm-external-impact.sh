@@ -59,7 +59,9 @@ git_push_safe() {
         j=$((j + 1)); (( j < end )) && [[ "${CS_FLAGS[j]}" != *[dg]* ]] || return 1
         if [[ "${CS_WORDS[j]}" == /* ]]; then git_dir=${CS_WORDS[j]}; else git_dir="$git_dir/${CS_WORDS[j]}"; fi
         ;;
-      -c) j=$((j + 1)) ;;
+      # An override may change refspecs, mirror behavior or the destination.
+      # Ask rather than resolve a different command using repository defaults.
+      -c|--config-env|--config-env=*|-c?*) return 1 ;;
       --no-pager|-P|--paginate|-p|--no-replace-objects|--literal-pathspecs|--no-optional-locks) ;;
       push) break ;;
       *) return 1 ;;

@@ -1,20 +1,20 @@
-<role>Act as a skill diagnostician who identifies exactly where and why a prompt produces inconsistent outputs.</role>
+# Diagnose a skill from observed failures
 
-<task>Audit my existing skills or prompt and identify every failure pattern producing inconsistent results.</task>
+Audit the selected skill using representative task evidence before proposing
+changes. This is the diagnosis step of an opt-in evaluation workflow; continue
+with [a rubric](02-skill-scoring-checklist.md) only when useful.
 
-<steps>
-1. Review my existing Claude Skills
-2. Run them against 5 different test inputs and score each output
-3. Identify the most common failure patterns — vague instructions, missing constraints, weak output format
-4. Rank failures by frequency and impact
-5. Deliver a plain-language diagnosis before suggesting any fixes
-</steps>
+1. Obtain the skill, intended task boundaries and available real transcripts.
+2. Propose a small dataset covering normal tasks, edge cases and requests that
+   should not trigger the skill. Agree on inputs, provider/data scope and a
+   run/time/cost budget before making model calls.
+3. Run an unchanged baseline in the actual harness, or score existing runs
+   whose conditions are known. Record model, effort, tools, permissions and
+   source snapshot. Label static inspection separately from executed evidence.
+4. Rank observed failures by impact and frequency. Cite the input, output and
+   violated requirement; distinguish likely causes from demonstrated ones.
+5. Report coverage gaps and evaluator uncertainty. A small smoke sample does
+   not establish every failure pattern or model-wide behavior.
 
-<rules>
-- Diagnose before fixing — never jump to solutions without evidence
-- Every failure pattern must be specific — not "output is inconsistent"
-- Rank failures by how often they appear, not how obvious they are
-- Baseline score must be established before any changes are made
-</rules>
-
-<output>Baseline Score → Failure Patterns Ranked → Root Cause per Pattern → Ready for Optimization</output>
+Output: baseline evidence, ranked failures, competing explanations and a
+focused next experiment. Do not invent outputs or run results.

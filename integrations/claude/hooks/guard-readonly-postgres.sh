@@ -36,7 +36,7 @@ cs_scan "$command" || ask "Could not inspect the PostgreSQL command."
 cs_context "$cwd" "$session_id"
 
 credentials_inline() {
-  [[ "$command" =~ PGPASSWORD= ]] || [[ "$command" =~ postgres(ql)?://[^[:space:]@/]+:[^[:space:]@]+@ ]]
+  [[ "$command" =~ PGPASSWORD=|password[[:space:]]*= ]] || [[ "$command" =~ postgres(ql)?://[^[:space:]@/]+:[^[:space:]@]+@ ]]
 }
 
 # Sets query to the single -c/--command value of the psql invocation at CS_I.
@@ -96,13 +96,13 @@ read_only_query() {
 
 for segment in $(cs_segments); do
   cs_invocation "$segment" psql || continue
+  if credentials_inline; then
+    ask "PostgreSQL command appears to contain credentials; use a secret-managed profile instead."
+  fi
   # An allowlisted development database may be changed freely.
   cs_pg_dev_target "$segment" && continue
   reason=""
   inspect_invocation "$segment" || ask "$reason"
-  if credentials_inline; then
-    ask "PostgreSQL command appears to contain credentials; use a secret-managed profile instead."
-  fi
   [[ -z "$query" ]] || read_only_query \
     || ask "PostgreSQL command is not a clearly read-only diagnostic; confirm scope and use a reviewed query."
 done

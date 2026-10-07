@@ -1,10 +1,14 @@
 # Council Skill Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Archived implementation record, superseded on 2026-10-07 by
+> [the current council contract](../../../skills/council/SKILL.md) and its
+> [CLI matrix](../../../skills/council/references/cli-matrix.md).
+> The old checkboxes, commands, branch names and dependencies below are
+> historical assumptions, not instructions to execute or current guarantees.
 
 **Goal:** A portable `council` Agent Skill that convenes installed agent CLIs (claude, codex, gemini, opencode) as an LLM council — parallel opinions, optional anonymized peer ranking, chairman synthesis — per the approved spec at `docs/superpowers/specs/2026-07-19-council-skill-design.md`.
 
-**Architecture:** A deterministic bash runner (`scripts/council.sh`) handles member discovery, parallel read-only headless dispatch, anonymization, and peer-review fan-out. The harness session (the agent reading SKILL.md) acts as chairman: writes the prompt, calls the runner, synthesizes. A personal overlay variant is copied into the private llm-prompts repo with a mandatory redaction gate.
+**Architecture:** A deterministic bash runner (`scripts/council.sh`) handles member discovery, parallel read-only headless dispatch, anonymization, and peer-review fan-out. The harness session (the agent reading SKILL.md) acts as chairman: writes the prompt, calls the runner, synthesizes. Downstream overlays can add a mandatory redaction gate.
 
 **Tech Stack:** bash (zero dependencies), Agent Skills directory format, headless CLIs: `claude -p`, `codex exec`, `gemini -p`, `opencode run`.
 
@@ -818,4 +822,4 @@ report.
 - `shellcheck` + `bash -n` on both shell files.
 - `pre-commit run --all-files` clean.
 - Live smoke test with real CLIs produced >= 2 responses (Task 6, step 3).
-- Personal copy self-test passes from its llm-prompts location (Task 7, step 3).
+- Downstream overlay self-test passes from its installation location (Task 7, step 3).
