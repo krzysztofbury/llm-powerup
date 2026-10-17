@@ -9,3 +9,4 @@ Icon?
 
 NETWORK_SNAPSHOT.md
 *.log
+__pycache__/

@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- `video-edit` skill: transcript-driven editing of recorded footage with local
+  Whisper, an edit decision list, HyperFrames title and end cards, sentence
+  subtitles, -14 LUFS loudness, an OpenTimelineIO handoff for Kdenlive or
+  Resolve, brand profiles, and a verifier for loudness, bleep placement and
+  muting. Method adapted from browser-use/video-use (MIT).
+
 ### Changed
 
 - Scope verification rules to affected behavior and remove repeated procedure.
