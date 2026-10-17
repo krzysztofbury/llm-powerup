@@ -24,6 +24,7 @@ integrations for Claude Code, Codex, and OpenCode.
 | `plausible-insights` | Analyze privacy-friendly web analytics through an authorized adapter. |
 | `sentry-observability` | Design and review Sentry observability with privacy controls. |
 | `ubiquiti-advisor` | Review a user-authorized UniFi network configuration. |
+| `video-edit` | Edit recorded footage from a word-level transcript: cuts, cards, subtitles, loudness, verified renders. |
 | `whatsapp-style-guide` | Format concise, mobile-first WhatsApp messages. |
 
 ## Install A Skill
@@ -38,7 +39,8 @@ ln -s "$PWD/skills/<skill-name>" "$HOME/.agents/skills/<skill-name>"
 Claude Code, Codex, and OpenCode support the Agent Skills directory format.
 Symlink into the skills location your harness discovers. Review a skill and
 its dependencies before linking it: some require an authorized analytics,
-health-data, database, or network adapter.
+health-data, database, or network adapter. `video-edit` needs ffmpeg, Node,
+and local Whisper; see its Requirements section.
 
 ## Safety And Privacy
 
