@@ -1,13 +1,15 @@
 """Subtitle cues from Whisper word timestamps.
 
 Cues follow sentences, split at a comma when long, and wrap into at most two
-balanced lines. Used by render.py; importable on its own.
+balanced lines. Whisper sometimes returns no punctuation at all, so a long
+pause also ends a sentence and a cue never grows past two lines. Used by render.py; importable on its own.
 """
 
 MAX_LINE = 42           # characters per subtitle line
 MAX_CUE = 2 * MAX_LINE  # two lines per cue
 COMMA_SPLIT = 30        # split at a comma once the cue is this long
 TAIL = 0.3              # seconds a cue stays up after its last word
+PAUSE = 0.5             # a pause this long ends a sentence
 
 
 def _joined(ws):
@@ -16,9 +18,9 @@ def _joined(ws):
 
 def _sentences(words):
     cur = []
-    for w in words:
+    for i, w in enumerate(words):
         cur.append(w)
-        if w[2] and w[2][-1] in ".?!":
+        if (w[2] and w[2][-1] in ".?!") or (i + 1 < len(words) and words[i + 1][0] - w[1] >= PAUSE):
             yield cur
             cur = []
     if cur:
@@ -28,6 +30,9 @@ def _sentences(words):
 def _chunks(sentence):
     pieces, cur = [], []
     for w in sentence:
+        if cur and len(_joined(cur + [w])) > MAX_CUE:
+            pieces.append(cur)
+            cur = []
         cur.append(w)
         if w[2].endswith(",") and len(_joined(cur)) > COMMA_SPLIT:
             pieces.append(cur)

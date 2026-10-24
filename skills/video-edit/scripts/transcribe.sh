@@ -8,6 +8,8 @@
 # ($VIDEO_EDIT_BRAND or ~/.config/video-edit/brand.json) may restrict the
 # allowed codes with "languages": ["en", "pl"].
 # Writes <out_dir>/<video stem>.json and skips sources already transcribed.
+# Also writes <out_dir>/<video stem>.pauses: silences measured from the audio,
+# one "start end" line each, which pack_transcript.py shows as cut points.
 set -euo pipefail
 
 lang=${1:?usage: transcribe.sh <language> <out_dir> <video>...}
@@ -31,11 +33,20 @@ for v in "$@"; do
   stem=$(basename "${v%.*}")
   if [[ -s $out/$stem.json ]]; then echo "cached: $stem"; else todo+=("$v"); fi
 done
-((${#todo[@]})) || exit 0
+if ((${#todo[@]})); then
+  whisper-ctranslate2 "${todo[@]}" --model large-v3-turbo --language "$lang" --compute_type int8 \
+    --word_timestamps True --output_format json --output_dir "$out" --threads "$(nproc)" \
+    2>&1 | grep -vE 'Warning|warn' || true
+  for v in "${todo[@]}"; do
+    [[ -s $out/$(basename "${v%.*}").json ]] || { echo "transcription failed: $v" >&2; exit 1; }
+  done
+fi
 
-whisper-ctranslate2 "${todo[@]}" --model large-v3-turbo --language "$lang" --compute_type int8 \
-  --word_timestamps True --output_format json --output_dir "$out" --threads "$(nproc)" \
-  2>&1 | grep -vE 'Warning|warn' || true
-for v in "${todo[@]}"; do
-  [[ -s $out/$(basename "${v%.*}").json ]] || { echo "transcription failed: $v" >&2; exit 1; }
+# Whisper often runs word timestamps together and hides real pauses, so measure
+# them from the audio as well.
+for v in "$@"; do
+  p=$out/$(basename "${v%.*}").pauses
+  [[ -s $p ]] && continue
+  ffmpeg -nostdin -hide_banner -nostats -i "$v" -vn -af silencedetect=noise=-38dB:d=0.18 -f null - 2>&1 |
+    awk '/silence_start/ {s = $NF} /silence_end/ {print s, $5}' > "$p"
 done

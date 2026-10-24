@@ -2,8 +2,10 @@
   "accent": "#2563eb",
   "text": "#334155",
   "background": "#ffffff",
+  "canvas": "#111416",
   "font": "Inter",
   "logo": "logo.png",
+  "mark": "mark.png",
   "header_html": "My <b>Channel</b>:",
   "url": "example.com",
   "languages": ["en"]
