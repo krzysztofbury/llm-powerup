@@ -24,7 +24,7 @@ integrations for Claude Code, Codex, and OpenCode.
 | `plausible-insights` | Analyze privacy-friendly web analytics through an authorized adapter. |
 | `sentry-observability` | Design and review Sentry observability with privacy controls. |
 | `ubiquiti-advisor` | Review a user-authorized UniFi network configuration. |
-| `video-edit` | Edit recorded footage from a word-level transcript: cuts, cards, subtitles, loudness, verified renders. |
+| `video-edit` | Edit recorded footage from a word-level transcript: cuts, cards, subtitles, loudness, vertical Shorts, verified renders. |
 | `whatsapp-style-guide` | Format concise, mobile-first WhatsApp messages. |
 
 ## Install A Skill

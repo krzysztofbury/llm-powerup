@@ -11,6 +11,14 @@ All notable changes to this project are documented in this file.
   subtitles, -14 LUFS loudness, an OpenTimelineIO handoff for Kdenlive or
   Resolve, brand profiles, and a verifier for loudness, bleep placement and
   muting. Method adapted from browser-use/video-use (MIT).
+- `video-edit` vertical Shorts: `"format": "short"` crops panels from 16:9
+  footage onto a branded 9:16 canvas, burns big keyword captions in the brand
+  font, jump-cuts pauses with an optional punch-in, and fixes or hides caption
+  words with `corrections`. The verifier outlines the Shorts player overlay
+  zones on a portrait contact sheet.
+- `video-edit` transcript reading: audio pauses measured with ffmpeg correct
+  Whisper word timings, and lines that point to other videos or repeat words
+  (stutters, end-of-recording hallucinations) are flagged.
 
 ### Changed
 
@@ -23,6 +31,9 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- `video-edit` cuts snap to whole frames, so joined segments no longer drift;
+  subtitle cues break at pauses and length when Whisper returns no
+  punctuation; ffmpeg no longer reads stdin inside batch loops.
 - Development PostgreSQL exemptions reject ambiguous URI, hostaddr, service and
   mixed routing forms; inline credentials are checked before exemptions.
 - Quiet `find -delete` is limited to owned scratch. Artifact-like predicates

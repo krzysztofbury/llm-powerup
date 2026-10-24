@@ -17,6 +17,7 @@ from pathlib import Path
 
 BLEEP_BAND = "bandpass=f=1000:w=50"
 NOTCH = "bandreject=f=1000:w=100"
+SHORTS_UI = [(0, 0, 0.19, 0.07), (0.889, 0.77, 0.111, 0.23), (0, 0.915, 0.889, 0.085)]  # x, y, w, h of frame
 
 
 def ff(args):
@@ -74,6 +75,15 @@ def main():
             if v > -60 and v - f > -6 and not inside(i * 0.1)]
     check(not hits, "no stray bleep", f"tone outside planned windows at {hits[:5]}" if hits else "none")
 
+    size = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+                           "stream=width,height", "-of", "csv=p=0", str(shown)], capture_output=True, text=True)
+    vw, vh = map(int, size.stdout.strip().split(","))
+    frame_w, cols = (240, 8) if vh > vw else (480, 4)  # vertical shorts: smaller frames, more per row
+    # Vertical shorts: outline where the YouTube Shorts player draws over the video (mute and
+    # play at the top left, like/comment/share on the right, channel and title at the bottom),
+    # measured on the mobile site at phone size. Nothing important should sit inside the red.
+    zones = "".join(f"drawbox=x=iw*{x}:y=ih*{y}:w=iw*{w}:h=ih*{h}:color=red@0.7:t=6,"
+                    for x, y, w, h in SHORTS_UI) if vh > vw else ""
     times = [t + o for t in r["cuts"] for o in (-0.3, 0.3)] + r["cue_midpoints"]
     times = sorted(t for t in times if 0 <= t < dur)
     with tempfile.TemporaryDirectory() as tmp:
@@ -81,12 +91,13 @@ def main():
         for n, t in enumerate(times):
             f = Path(tmp) / f"{n:03}.png"
             subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.2f}", "-i", str(shown), "-frames:v",
-                            "1", "-vf", f"scale=480:-2,drawtext=text='{t:.1f}s':x=8:y=8:fontsize=22:"
+                            "1", "-vf", f"{zones}scale={frame_w}:-2,drawtext=text='{t:.1f}s':x=8:y=8:fontsize=22:"
                             "fontcolor=white:box=1:boxcolor=black@0.6", str(f)], check=True)
-            frames.append(str(f))
+            if f.exists():  # a time in the last frame can yield no image
+                frames.append(str(f))
         sheet = d / "work" / "review.png"
         if frames:
-            subprocess.run(["magick", "montage", *frames, "-tile", "4x", "-geometry", "+4+4",
+            subprocess.run(["magick", "montage", *frames, "-tile", f"{cols}x", "-geometry", "+4+4",
                             "-background", "#222", str(sheet)], check=True)
             print(f"LOOK  contact sheet: {sheet} ({len(frames)} frames at cuts and subtitle cues)")
     sys.exit(1 if fails else 0)

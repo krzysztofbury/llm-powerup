@@ -17,7 +17,20 @@ EDL fields (times in seconds, source time unless noted):
   segments:  [{"source": key, "start": s, "end": e, "quote": "...", "reason": "..."}
               | {"card": "title" | "endcard", "duration": d, "vars": {...}}]
   bleeps:    [{"source": key, "start": s, "end": e, "mask": "K***a"}]
+  corrections: [{"source": key, "start": s, "end": e, "text": "ctid"}]  words in the
+             window become one word with this text (names Whisper got wrong);
+             "text": "" drops them from the subtitles only (stutters, fillers)
+  jumpcut:   {"min_pause": 0.3, "keep": 0.1, "punch": 1.12}  split media segments at
+             pauses of min_pause or more, keeping keep seconds each side; punch zooms
+             every other piece (panels marked "punch") to hide the jump
   subtitles: true | false   (default true)
+
+Vertical shorts ("format": "short", 1080x1920 by default, no cards):
+  short:     {"title": "...", "subtitle": "...", "highlight": ["distinct", ...],
+              "caption_y": 1500, "caption_size": 92, "header_y": 140}
+  views:     {"name": [panel, ...]}, panels as documented in shorts.py
+  segments:  media segments name their "view" (default: the first view) and may
+             override "title" / "subtitle" / "caption_y"
 
 The brand profile is read from the EDL "brand" path, else $VIDEO_EDIT_BRAND,
 else ~/.config/video-edit/brand.json, else neutral defaults.
@@ -37,7 +50,9 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # keep the installed skill directory clean
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import shorts  # noqa: E402
 import subtitles  # noqa: E402
+from words import load_words  # noqa: E402
 
 SKILL = Path(__file__).resolve().parent.parent
 HYPERFRAMES = "hyperframes@0.8.168"
@@ -47,7 +62,7 @@ BLEEP_HZ = 1000
 LOUDNESS = "I=-14:TP=-1.5:LRA=11"
 DEFAULT_BRAND = {
     "accent": "#2563eb", "text": "#334155", "background": "#ffffff", "font": "Inter",
-    "logo": None, "header_html": "", "url": "", "languages": None,
+    "logo": None, "mark": None, "header_html": "", "url": "", "languages": None,
 }
 SUB_STYLE = ("FontName=Noto Sans,Bold=1,FontSize=15,PrimaryColour=&H00FFFFFF,"
              "BackColour=&H66000000,OutlineColour=&H66000000,BorderStyle=3,"
@@ -76,8 +91,9 @@ def load_brand(edl, edl_dir):
     for c in candidates:
         if c.is_file():
             brand = dict(DEFAULT_BRAND, **json.loads(c.read_text()))
-            if brand.get("logo"):
-                brand["logo"] = str((c.parent / Path(brand["logo"]).expanduser()).resolve())
+            for k in ("logo", "mark"):
+                if brand.get(k):
+                    brand[k] = str((c.parent / Path(brand[k]).expanduser()).resolve())
             brand["_path"] = str(c)
             return brand
     return dict(DEFAULT_BRAND, _path="defaults")
@@ -140,9 +156,12 @@ def video_chain(fps, w, h):
             f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p")
 
 
-def extract(src, start, dur, has_audio, bleeps, fps, w, h, out, fade=True):
-    """One normalised segment; bleeps are (start, end) relative to the segment."""
+def extract(src, start, dur, has_audio, bleeps, fps, w, h, out, fade=True, layout=None):
+    """One normalised segment; bleeps are (start, end) relative to the segment.
+    layout: (extra inputs, graph from [0:v] to [v]) from shorts.view_graph, else scale and pad."""
     inputs = ["-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(src)]
+    if layout:
+        inputs += layout[0]
     if has_audio:
         mute = "".join(f",volume=0:enable='between(t,{a:.3f},{b:.3f})'" for a, b in bleeps)
         fades = f",afade=t=in:d={FADE},afade=t=out:st={max(dur - FADE, 0):.3f}:d={FADE}" if fade else ""
@@ -157,18 +176,51 @@ def extract(src, start, dur, has_audio, bleeps, fps, w, h, out, fade=True):
         labels.append(f"[t{i}]")
     mix = (f";{''.join(labels)}amix=inputs={len(labels)}:normalize=0:duration=first[a]"
            if bleeps else ";[dia]anull[a]")
-    graph = f"[0:v]{video_chain(fps, w, h)}[v];{audio}" + "".join(f";{t}" for t in tones) + mix
+    video = layout[1] if layout else f"[0:v]{video_chain(fps, w, h)}[v]"
+    graph = f"{video};{audio}" + "".join(f";{t}" for t in tones) + mix
     run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
          "-c:v", "libx264", "-crf", "12", "-preset", "medium", "-c:a", "pcm_s16le", "-t", f"{dur:.3f}",
          str(out)])
 
 
-def words_for(transcripts_dir, src_path):
+def words_for(transcripts_dir, src_path, corrections=()):
+    """(start, end, text) per word, timings trimmed by measured pauses, corrections applied."""
     f = transcripts_dir / f"{Path(src_path).stem}.json"
     if not f.exists():
         return []
-    return [(w["start"], w["end"], w["word"].strip())
-            for s in json.loads(f.read_text())["segments"] for w in s.get("words", [])]
+    out = [(w["start"], w["end"], w["word"].strip()) for w in load_words(f)]
+    for c in corrections:
+        hit = [w for w in out if c["start"] <= (w[0] + w[1]) / 2 <= c["end"]]
+        if hit:
+            out = [w for w in out if w not in hit]
+            if c["text"]:  # empty text drops the words from the subtitles (stutters, fillers)
+                out.append((hit[0][0], hit[-1][1], c["text"]))
+    return sorted(out)
+
+
+def jumpcut(segments, sources, transcripts, cfg):
+    """Split media segments at pauses of cfg min_pause or more, keeping cfg keep each side."""
+    min_pause, keep = cfg.get("min_pause", 0.3), cfg.get("keep", 0.1)
+    if keep * 2 >= min_pause:
+        sys.exit("jumpcut keep must be under half of min_pause, or the pieces overlap and repeat audio")
+    out = []
+    for seg in segments:
+        if "card" in seg:
+            out.append(seg)
+            continue
+        # Uncorrected words: a subtitle-only drop must not turn into a cut in the audio.
+        ws = [w for w in words_for(transcripts, sources[seg["source"]]) if seg["start"] <= w[0] < seg["end"]]
+        a = seg["start"]
+        for w1, w2 in zip(ws, ws[1:]):
+            if w2[0] - w1[1] >= min_pause:
+                out.append(dict(seg, start=a, end=w1[1] + keep))
+                a = w2[0] - keep
+        out.append(dict(seg, start=a))
+    return out
+
+
+def filter_path(p):
+    return str(p).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
 
 def mask_word(text, mask):
@@ -187,12 +239,24 @@ def main():
     print(f"brand: {brand['_path']}")
     work = d / "work"
     work.mkdir(exist_ok=True)
-    fps, w, h = edl.get("fps", 25), edl.get("width", 1920), edl.get("height", 1080)
+    short = edl.get("format") == "short"
+    fps = edl.get("fps", 25)
+    w, h = edl.get("width", 1080 if short else 1920), edl.get("height", 1920 if short else 1080)
     sources = {k: Path(v) for k, v in edl["sources"].items()}
     transcripts = d / edl.get("transcripts", "transcripts")
+    corrections = {}
+    for c in edl.get("corrections", []):
+        corrections.setdefault(c["source"], []).append(c)
+    segments = edl["segments"]
+    if short and any("card" in s for s in segments):
+        sys.exit("cards are 16:9 templates; leave them out of a short (open cold on the hook)")
+    if edl.get("jumpcut"):
+        segments = jumpcut(segments, sources, transcripts, edl["jumpcut"])
+    cfg = edl.get("short", {})
+    caption_y = []  # (output start, y) per segment, for the short captions
 
     parts, timeline, words_out, cursor = [], [], [], 0.0
-    for i, seg in enumerate(edl["segments"]):
+    for i, seg in enumerate(segments):
         part = work / f"seg_{i:03}.mkv"
         if "card" in seg:
             card = render_card(seg, fps, work, brand)
@@ -204,7 +268,9 @@ def main():
             continue
         src = sources[seg["source"]]
         dur_src, has_audio = probe(src)
-        start, end = seg["start"], min(seg["end"], dur_src)
+        # Whole frames only, or every joined part adds up to a frame of drift.
+        start = round(seg["start"] * fps) / fps
+        end = min(round(seg["end"] * fps) / fps, int(dur_src * fps) / fps)
         dur = end - start
         local = []
         for b in edl.get("bleeps", []):
@@ -212,16 +278,26 @@ def main():
                 a = max(b["start"] - BLEEP_PAD, start) - start
                 z = min(b["end"] + BLEEP_PAD, end) - start
                 local.append((a, z))
-        extract(src, start, dur, has_audio, local, fps, w, h, part)
+        layout = None
+        if short:
+            views = edl.get("views") or {"full": [{"crop": [0, 0, 1280, 720], "at": [0, 656], "width": w}]}
+            view = views[seg.get("view") or next(iter(views))]
+            png = shorts.chrome(brand, seg.get("title", cfg.get("title", "")),
+                                seg.get("subtitle", cfg.get("subtitle", "")), w, h, work, cfg.get("header_y", 140))
+            zoom = edl.get("jumpcut", {}).get("punch", 1.0) if i % 2 else 1.0
+            layout = shorts.view_graph(view, brand, png, fps, dur, work, zoom)
+            caption_y.append((cursor, seg.get("caption_y", cfg.get("caption_y", 1500))))
+        extract(src, start, dur, has_audio, local, fps, w, h, part, layout=layout)
         timeline.append({"kind": "media", "source": seg["source"], "file": str(src), "in": start,
                          "out": end, "out_start": cursor, "duration": dur, "quote": seg.get("quote", ""),
                          "bleeps_out": [(cursor + a, cursor + z) for a, z in local]})
-        for ws, we, text in words_for(transcripts, src):
-            if ws >= start - 0.05 and we <= end + 0.05:
+        for ws, we, text in words_for(transcripts, src, corrections.get(seg["source"], [])):
+            if start - 0.05 <= ws < end - 0.02:  # a word belongs where it starts
+                we = min(we, end)
                 for b in edl.get("bleeps", []):
                     if b["source"] == seg["source"] and ws < b["end"] and we > b["start"] and b.get("mask"):
                         text = mask_word(text, b["mask"])
-                words_out.append((cursor + ws - start, cursor + we - start, text))
+                words_out.append((cursor + max(ws - start, 0), cursor + we - start, text))
         cursor += dur
         parts.append(part)
 
@@ -246,9 +322,16 @@ def main():
     srt = d / "final.srt"
     srt.write_text(subtitles.build_srt(words_out))
     if edl.get("subtitles", True) and words_out:
-        sub = str(srt).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-        run(["ffmpeg", "-v", "error", "-y", "-i", str(program), "-vf",
-             f"subtitles={sub}:force_style='{SUB_STYLE}'", "-af", norm, *enc, str(d / "final_subs.mp4")])
+        if short:
+            ass = d / "final.ass"
+            y_at = lambda t: next(y for s, y in reversed(caption_y) if s <= t + 1e-6)  # noqa: E731
+            cuts = [t["out_start"] for t in timeline[1:]]
+            ass.write_text(shorts.build_ass(words_out, brand, cfg, w, h, y_at, cuts))
+            vf = f"subtitles={filter_path(ass)}:fontsdir={filter_path(shorts.FONT_CACHE)}"
+        else:
+            vf = f"subtitles={filter_path(srt)}:force_style='{SUB_STYLE}'"
+        run(["ffmpeg", "-v", "error", "-y", "-i", str(program), "-vf", vf, "-af", norm, *enc,
+             str(d / "final_subs.mp4")])
 
     bleep_wav = work / "bleep.wav"
     run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=f={BLEEP_HZ}:r=48000:d=2",
