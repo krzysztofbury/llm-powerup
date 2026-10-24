@@ -68,12 +68,17 @@ def main():
     # A tone anywhere else means a bleep landed in the wrong place. A pure tone
     # puts nearly all its energy in the 1 kHz band; speech spreads across the
     # spectrum. Flag steps where the band carries almost everything, at any level.
-    band = rms_steps(final, 0, dur, BLEEP_BAND)
-    full = rms_steps(final, 0, dur, "anull")
-    inside = lambda t: any(a - 0.15 <= t <= b + 0.15 for a, b in r["bleeps_out"])  # noqa: E731
-    hits = [round(i * 0.1, 1) for i, (v, f) in enumerate(zip(band, full))
-            if v > -60 and v - f > -6 and not inside(i * 0.1)]
-    check(not hits, "no stray bleep", f"tone outside planned windows at {hits[:5]}" if hits else "none")
+    # Only when bleeps are planned: without them no tone is ever mixed in, and a
+    # voice harmonic or filter ringing after a hard cut would be a false alarm.
+    if r["bleeps_out"]:
+        band = rms_steps(final, 0, dur, BLEEP_BAND)
+        full = rms_steps(final, 0, dur, "anull")
+        inside = lambda t: any(a - 0.15 <= t <= b + 0.15 for a, b in r["bleeps_out"])  # noqa: E731
+        hits = [round(i * 0.1, 1) for i, (v, f) in enumerate(zip(band, full))
+                if v > -60 and v - f > -6 and not inside(i * 0.1)]
+        check(not hits, "no stray bleep", f"tone outside planned windows at {hits[:5]}" if hits else "none")
+    else:
+        print("SKIP  no stray bleep: no bleeps planned")
 
     size = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
                            "stream=width,height", "-of", "csv=p=0", str(shown)], capture_output=True, text=True)
