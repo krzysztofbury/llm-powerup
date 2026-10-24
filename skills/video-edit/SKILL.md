@@ -147,6 +147,9 @@ allowed; open cold on the hook.
   2-3x instead of the whole table at 1x.
 - Screen recordings scroll and switch panels (an output log instead of the
   result grid); check `review.png` across every segment, not one frame.
+- While a result grid still shows the previous query, give those segments a
+  view without the grid (bigger code and face) and bring the grid back once
+  the new result is on screen.
 
 ### Publishing
 
@@ -156,6 +159,9 @@ allowed; open cold on the hook.
 - YouTube rejects `<` and `>` in descriptions.
 - Let YouTube finish its checks before publishing; publishing earlier only
   warns, but a clean check avoids restrictions.
+- In YouTube Studio the content list reorders after each publish and its rows
+  carry hover actions such as Promote; reload the list and look before every
+  click.
 
 ## Brand profile
 
