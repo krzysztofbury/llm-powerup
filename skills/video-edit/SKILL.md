@@ -161,7 +161,19 @@ allowed; open cold on the hook.
   warns, but a clean check avoids restrictions.
 - In YouTube Studio the content list reorders after each publish and its rows
   carry hover actions such as Promote; reload the list and look before every
-  click.
+  click. For more than a few shorts, note each video ID from the upload
+  dialog's video link and publish through `studio.youtube.com/video/<id>/edit`
+  (Edit draft, Visibility, Public, Publish): it does not depend on list order
+  or paging.
+- With the browser extension, element references from `find` are valid only
+  on the page load that produced them; run `find` again after every navigation.
+
+### Many videos at once
+
+Transcribe every source first, map layouts, list candidates, then cut per
+source video in parallel (one worker per video with the candidate rows,
+measured crops, template EDLs and the rules above). Review every
+`review.png` yourself before upload; that review is not delegable.
 
 ## Brand profile
 
@@ -202,6 +214,7 @@ semi-transparent box, burned last. Loudness -14 LUFS, true peak ≤ -1.5 dBFS.
 | A word from the next sentence in the last caption | it starts inside the cut window; end the segment a frame earlier |
 | Repeated "thank you" at the end of a transcript | Whisper hallucinates on silence or music; `<REPEAT>` flags it, never cut past the last real word |
 | Misheard domain words ("joints" for joins, "region" for right join) | read flagged and technical words in context, fix with `corrections` |
+| "no stray bleep" FAIL with no bleeps in the EDL | a voice harmonic or ringing after a hard cut; verify now skips the check when no bleeps are planned |
 | Later videos skipped in a batch loop | ffmpeg reads stdin; scripts use `-nostdin`, add it to your own loops too |
 
 Whisper tends to drop fillers ("um", "uh"), so filler removal from the
