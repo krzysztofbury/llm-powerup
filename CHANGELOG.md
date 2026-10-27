@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- AGENTS.md: take commit SHAs, image digests and run IDs from the command that
+  produces them, never retype them.
 - AGENTS.md: wait on CI by run ID and report outlier jobs; keep the full
   output of costly commands before filtering it; delete branches, tags,
   images and volumes only by the names the task created.

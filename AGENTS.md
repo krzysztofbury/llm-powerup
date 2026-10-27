@@ -11,6 +11,11 @@ installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
 - To confirm what is actually on the default branch or deployed, use remote
   evidence (`gh` CLI, `git ls-remote`, the hosting UI), never local SHA-based
   checks.
+- Never retype a commit SHA, image digest or run ID from memory or from an
+  abbreviated form. Take it from the command that produces it, in the same
+  invocation (`$(git ls-remote origin refs/heads/main | cut -f1)`) or by
+  copying its output; a reconstructed identifier names nothing or the wrong
+  thing.
 - Before `gh pr merge`, compare the PR head (`gh pr view --json headRefOid`)
   with the SHA you pushed. A PR can lag behind the branch; merging a stale
   head ships half the work.
