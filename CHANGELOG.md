@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- AGENTS.md: wait on CI by run ID and report outlier jobs; keep the full
+  output of costly commands before filtering it; delete branches, tags,
+  images and volumes only by the names the task created.
+
 ### Added
 
 - `video-edit` skill: transcript-driven editing of recorded footage with local

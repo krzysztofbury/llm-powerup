@@ -14,6 +14,10 @@ installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
 - Before `gh pr merge`, compare the PR head (`gh pr view --json headRefOid`)
   with the SHA you pushed. A PR can lag behind the branch; merging a stale
   head ships half the work.
+- Wait on CI by the run ID for the pushed commit (`gh run watch ID
+  --exit-status`), not `gh pr checks --watch`, which has hung after checks
+  finished. While it runs, compare each job's elapsed time with its finished
+  siblings and report an outlier at once instead of waiting.
 - A visible UI change is not "done" without visual verification in a real
   browser. If a visual check is impossible, say so explicitly instead of
   claiming completion from grep or curl output.
@@ -36,6 +40,9 @@ installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
   for new changes, failures or an unresolved risk.
 - Before a repository-wide regex substitution, list every match per pattern,
   including hyphenated names, URLs, and link paths, then review the word diff.
+- Write the full output of a costly or non-repeatable command (calls against
+  a live budget, release runs) to a scratch file before filtering it; output
+  trimmed with `tail` can force a second run.
 
 ## Scratch Space & Cleanup
 
@@ -48,6 +55,9 @@ installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
   `curl -O`, `uv build`) an explicit scratch output path.
 - Keep Git worktrees, source changes, and durable deliverables outside
   disposable scratch. Delete only paths allocated by the current task.
+- The same holds for branches, tags, images, containers and volumes: delete
+  them by the names this task created, never by a pattern or bulk selector
+  such as `git branch --merged` or `docker volume prune`.
 - Record ownership for multi-call scratch; clean it on completion or failure.
   Retain only useful deliverables. Report leftover paths, sizes, reasons and
   cleanup failures; never delete another task's files or escalate to hide them.
