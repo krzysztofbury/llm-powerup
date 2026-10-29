@@ -10,6 +10,9 @@ MAX_CUE = 2 * MAX_LINE  # two lines per cue
 COMMA_SPLIT = 30        # split at a comma once the cue is this long
 TAIL = 0.3              # seconds a cue stays up after its last word
 PAUSE = 0.5             # a pause this long ends a sentence
+GAP = 0.08              # minimum gap between cues: 2 frames at 25 fps and up (Netflix)
+CLOSE = 0.5             # a shorter gap is closed down to GAP, so cues do not flicker
+MIN_DUR = 0.84          # 20 frames at 24 fps (Netflix minimum event duration)
 
 
 def _joined(ws):
@@ -70,9 +73,10 @@ def build_srt(words):
     cues = [c for s in _sentences(words) for c in _chunks(s)]
     blocks = []
     for i, c in enumerate(cues):
-        start, end = c[0][0], c[-1][1] + TAIL
+        start, end = c[0][0], max(c[-1][1] + TAIL, c[0][0] + MIN_DUR)
         if i + 1 < len(cues):
-            end = min(end, cues[i + 1][0][0] - 0.02)
+            nxt = cues[i + 1][0][0] - GAP
+            end = max(nxt if nxt - end < CLOSE else min(end, nxt), start + GAP)
         blocks.append(f"{i + 1}\n{timestamp(start)} --> {timestamp(end)}\n{wrap(_joined(c))}\n")
     return "\n".join(blocks)
 

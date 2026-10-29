@@ -12,6 +12,12 @@ makes the final pass by eye in an editor. Method adapted from
 [video-use](https://github.com/browser-use/video-use) ([MIT](LICENSE.upstream)),
 with local transcription instead of a paid API.
 
+Defaults and checks follow published standards where they exist (Netflix and
+BBC subtitle guides, EBU R128, ITU-R BS.1770, YouTube upload specs, Murch on
+cutting); [references/standards.md](references/standards.md) lists each one
+with its source, marks what is only convention, and says where the skill
+applies it. Read it before changing a default.
+
 Scripts live in `scripts/`; run them with `bash` and `python3`. `final.otio`
 needs a Python with `opentimelineio`; without it the render skips that file.
 
@@ -32,11 +38,17 @@ needs a Python with `opentimelineio`; without it the render skips that file.
    and why, cards, bleeps, subtitles, length. Wait for approval before
    rendering.
 5. **EDL.** Write `<project>/edl.json` (format below).
-6. **Render.** `python3 scripts/render.py <project>/edl.json`.
-7. **Verify.** `python3 scripts/verify.py <project>/edl.json`, then look at
-   `work/review.png`. Fix and re-render, at most 3 passes; then report what
-   is left.
-8. **Hand over.** `final.mp4` + `final.srt` (upload the SRT separately),
+6. **Preview.** `python3 scripts/render.py <project>/edl.json --preview` writes
+   `work/preview.png` in seconds: the first and last frame of every planned
+   segment through the real layout (crops, panels, the caption band on a
+   short). Fix crops, scrolled screens and stale panels here, not after a render.
+7. **Render.** `python3 scripts/render.py <project>/edl.json`.
+8. **Verify.** `python3 scripts/verify.py <project>/edl.json`, then look at
+   `work/review.png` and play every `LISTEN` cut (too little quiet kept around
+   it in the source, so a word or breath may be clipped). `NOTE` lines compare
+   subtitle cues with the reading-speed and duration limits. Fix and
+   re-render, at most 3 passes; then report what is left.
+9. **Hand over.** `final.mp4` + `final.srt` (upload the SRT separately),
    `final_subs.mp4` (subtitles burned in, for social), `final.otio` (Kdenlive or
    Resolve for the pass by eye). Record decisions in `<project>/project.md`.
 
@@ -114,7 +126,11 @@ allowed; open cold on the hook.
   (Puppeteer) with a phone viewport and user agent and screenshot it; the
   extension-driven browser cannot switch to device mode.
 
-### Picking shorts from long videos
+### Picking moments from long recordings
+
+Picking 45 s worth keeping out of 30 min and cutting it cleanly are two jobs;
+do them one after the other, the pick first. The same steps fit highlights,
+trailers and clips for a 16:9 edit.
 
 1. Transcribe every source first (CPU large-v3-turbo runs at about 0.4x
    real time; run the batch in the background, one video after another).
@@ -128,8 +144,15 @@ allowed; open cold on the hook.
    new screen layout (slides, IDE, webcam position) needs one prototype
    rendered and checked before more shorts use it. Say plainly when a video
    has few standalone moments.
-5. Before each EDL: pull a full-size frame in the window to place crops, and
+5. Drop a candidate that needs more than about five pieces: it is stitched,
+   not found, and rarely holds a single thread. Two or three clean excerpts
+   far apart in the source are fine. Say so instead of forcing it.
+6. Before each EDL: pull a full-size frame in the window to place crops, and
    check word timings at every cut.
+
+The best source for a short is a recording made for it. When planning new
+recordings, suggest tight takes for the moments meant to become shorts: a
+short script read straight through cuts cleaner than any excerpt.
 
 ### Layout recipes (1280x720 sources)
 
@@ -186,6 +209,9 @@ uses the accent), `url` (end card), `languages` (allowed codes), `canvas`
 colours that read on `canvas`, for the header row of a short). See
 `brand.example.json`.
 
+Nothing from the brand is baked in by hand, so a rebrand is a loop: change
+`brand.json`, then re-render and verify every EDL of the series.
+
 ## Cutting rules
 
 - Cut only at word boundaries, inside pauses; ≥ 0.4 s is clean, under 0.15 s is not.
@@ -197,8 +223,11 @@ colours that read on `canvas`, for the header row of a short). See
 
 ## Defaults
 
-Subtitles: sentence cues, at most two lines of 42 characters, white bold on a
-semi-transparent box, burned last. Loudness -14 LUFS, true peak ≤ -1.5 dBFS.
+Subtitles: sentence cues, at most two lines of 42 characters, at least 20
+frames on screen, 2 frames between cues and shorter gaps closed (Netflix), white
+bold on a semi-transparent box, burned last. Loudness -14 LUFS (convention:
+YouTube publishes no target and turns loud uploads down), true peak aimed at
+-1.5 dBTP, never above -1 (EBU R128).
 
 ## Verification lessons
 
@@ -216,6 +245,8 @@ semi-transparent box, burned last. Loudness -14 LUFS, true peak ≤ -1.5 dBFS.
 | Misheard domain words ("joints" for joins, "region" for right join) | read flagged and technical words in context, fix with `corrections` |
 | "no stray bleep" FAIL with no bleeps in the EDL | a voice harmonic or ringing after a hard cut; verify now skips the check when no bleeps are planned |
 | Later videos skipped in a batch loop | ffmpeg reads stdin; scripts use `-nostdin`, add it to your own loops too |
+| A still from a layout shows only the canvas | the overlay's first output frame comes before the panels' first frame; grab three frames and keep the last (`--preview` does) |
+| Level checks on the final cannot tell air from speech | normalising quiet footage to -14 LUFS lifts room tone near speech level; measure cut points on the source, as `verify.py` does |
 
 Whisper tends to drop fillers ("um", "uh"), so filler removal from the
 transcript alone is unreliable; look for short gaps and check them with
