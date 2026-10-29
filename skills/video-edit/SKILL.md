@@ -144,9 +144,9 @@ trailers and clips for a 16:9 edit.
    new screen layout (slides, IDE, webcam position) needs one prototype
    rendered and checked before more shorts use it. Say plainly when a video
    has few standalone moments.
-5. Drop a candidate that needs more than about five pieces, or a source span
-   over three to four times its target length: it is stitched, not found, and
-   rarely holds a single thread. Say so instead of forcing it.
+5. Drop a candidate that needs more than about five pieces: it is stitched,
+   not found, and rarely holds a single thread. Two or three clean excerpts
+   far apart in the source are fine. Say so instead of forcing it.
 6. Before each EDL: pull a full-size frame in the window to place crops, and
    check word timings at every cut.
 
