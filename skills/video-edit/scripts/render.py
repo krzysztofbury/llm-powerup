@@ -1,6 +1,9 @@
 """Render an edit decision list (edl.json) into finished files.
 
-usage: python3 render.py <project>/edl.json [--no-cards-cache]
+usage: python3 render.py <project>/edl.json [--preview]
+
+--preview writes only work/preview.png: the first and last frame of every planned
+segment through the real layout, in seconds, to check before rendering.
 
 Writes next to the EDL:
   final.mp4        clean cut, loudness -14 LUFS, for YouTube with final.srt
@@ -219,6 +222,58 @@ def jumpcut(segments, sources, transcripts, cfg):
     return out
 
 
+def short_layout(seg, edl, brand, cfg, fps, w, h, dur, work, zoom=1.0):
+    views = edl.get("views") or {"full": [{"crop": [0, 0, 1280, 720], "at": [0, 656], "width": w}]}
+    view = views[seg.get("view") or next(iter(views))]
+    png = shorts.chrome(brand, seg.get("title", cfg.get("title", "")),
+                        seg.get("subtitle", cfg.get("subtitle", "")), w, h, work, cfg.get("header_y", 140))
+    return shorts.view_graph(view, brand, png, fps, dur, work, zoom)
+
+
+def preview(segments, edl, brand, sources, cfg, short, fps, w, h, work):
+    """work/preview.png: the first and last frame of every planned segment through the real
+    layout, before jump cuts, with no audio, captions or encode. Seconds instead of a render,
+    so crops, scrolled screens and stale panels are caught while the plan is still cheap."""
+    tile_w = 270 if short else 480
+    tmp = work / "preview"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir()
+    args = []
+    for i, seg in enumerate(segments):
+        if "card" in seg:
+            f = tmp / f"{i:03}_card.png"
+            run(["magick", "-size", f"{w}x{h}", "xc:#333", "-fill", "white", "-pointsize", str(w // 12),
+                 "-gravity", "center", "-annotate", "+0+0", f"{seg['card']} card\n{seg['duration']}s",
+                 "-resize", f"{tile_w}x", str(f)])
+            args += ["-label", f"#{i} {seg['card']} card", str(f)] * 2  # two tiles keep segments paired
+            continue
+        src = sources[seg["source"]]
+        # The layout's first output frame can be the bare canvas (the panels' first frame is
+        # not there yet), so grab three frames and keep the last; seek those two back at the end.
+        times = (round(seg["start"] * fps) / fps, round(seg["end"] * fps) / fps - 3.5 / fps)
+        for k, t in enumerate(times):
+            f = tmp / f"{i:03}_{k}.png"
+            band = ""
+            if short:  # mark where the captions sit
+                y = seg.get("caption_y", cfg.get("caption_y", 1500))
+                size = cfg.get("caption_size", 92)
+                band = f";[v]drawbox=x=0:y={y - size}:w=iw:h={2 * size}:color=yellow@0.25:t=fill[v]"
+                inputs, graph = short_layout(seg, edl, brand, cfg, fps, w, h, 1.0, work)
+            else:
+                inputs, graph = [], f"[0:v]{video_chain(fps, w, h)}[v]"
+            run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(src), *inputs,
+                 "-filter_complex", graph + band + f";[v]scale={tile_w}:-2[out]", "-map", "[out]",
+                 "-frames:v", "3", "-update", "1", str(f)])
+            view = f" {seg.get('view') or ''}" if short else ""
+            shown = t + 2 / fps
+            args += ["-label", f"#{i} {seg['source']}@{shown:.1f}s{view} {'start' if k == 0 else 'end'}", str(f)]
+    out = work / "preview.png"
+    run(["magick", "montage", *args, "-tile", f"{8 if short else 4}x", "-geometry", "+4+4",
+         "-background", "#222", "-fill", "white", "-pointsize", "14", str(out)])
+    shutil.rmtree(tmp, ignore_errors=True)
+    print(f"LOOK  preview: {out} (first and last frame of {len(segments)} planned segments)")
+
+
 def filter_path(p):
     return str(p).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
@@ -250,9 +305,12 @@ def main():
     segments = edl["segments"]
     if short and any("card" in s for s in segments):
         sys.exit("cards are 16:9 templates; leave them out of a short (open cold on the hook)")
+    cfg = edl.get("short", {})
+    if "--preview" in sys.argv:
+        preview(segments, edl, brand, sources, cfg, short, fps, w, h, work)
+        return
     if edl.get("jumpcut"):
         segments = jumpcut(segments, sources, transcripts, edl["jumpcut"])
-    cfg = edl.get("short", {})
     caption_y = []  # (output start, y) per segment, for the short captions
 
     parts, timeline, words_out, cursor = [], [], [], 0.0
@@ -280,12 +338,8 @@ def main():
                 local.append((a, z))
         layout = None
         if short:
-            views = edl.get("views") or {"full": [{"crop": [0, 0, 1280, 720], "at": [0, 656], "width": w}]}
-            view = views[seg.get("view") or next(iter(views))]
-            png = shorts.chrome(brand, seg.get("title", cfg.get("title", "")),
-                                seg.get("subtitle", cfg.get("subtitle", "")), w, h, work, cfg.get("header_y", 140))
             zoom = edl.get("jumpcut", {}).get("punch", 1.0) if i % 2 else 1.0
-            layout = shorts.view_graph(view, brand, png, fps, dur, work, zoom)
+            layout = short_layout(seg, edl, brand, cfg, fps, w, h, dur, work, zoom)
             caption_y.append((cursor, seg.get("caption_y", cfg.get("caption_y", 1500))))
         extract(src, start, dur, has_audio, local, fps, w, h, part, layout=layout)
         timeline.append({"kind": "media", "source": seg["source"], "file": str(src), "in": start,

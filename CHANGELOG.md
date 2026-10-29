@@ -27,6 +27,14 @@ All notable changes to this project are documented in this file.
 - `video-edit` transcript reading: audio pauses measured with ffmpeg correct
   Whisper word timings, and lines that point to other videos or repeat words
   (stutters, end-of-recording hallucinations) are flagged.
+- `video-edit` review before and after the render: `render.py --preview` shows
+  the first and last frame of every planned segment through the real layout;
+  the verifier fails on pieces under 3 frames and single-frame flashes, lists
+  cuts with too little quiet in the source to listen to, and reports subtitle
+  cues against reading-speed and duration limits.
+- `video-edit` craft standards reference: the published standard behind each
+  default (subtitle, loudness, delivery, safe areas, cutting), with sources and
+  what is only convention.
 
 ### Changed
 
@@ -42,6 +50,8 @@ All notable changes to this project are documented in this file.
 - `video-edit` cuts snap to whole frames, so joined segments no longer drift;
   subtitle cues break at pauses and length when Whisper returns no
   punctuation; ffmpeg no longer reads stdin inside batch loops.
+- `video-edit` subtitle cues keep a 2-frame gap, close gaps under 0.5 s and stay
+  on screen at least 20 frames.
 - Development PostgreSQL exemptions reject ambiguous URI, hostaddr, service and
   mixed routing forms; inline credentials are checked before exemptions.
 - Quiet `find -delete` is limited to owned scratch. Artifact-like predicates
