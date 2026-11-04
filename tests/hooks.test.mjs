@@ -247,6 +247,10 @@ test('a leading cd to an existing directory sets the working directory', t => {
     assert.equal(run('confirm-external-impact', command, elsewhere), 'ask', command);
   }
   assert.equal(run('confirm-external-impact', `cd ${repo} && git fetch -q | cat; git push origin feature/example`, elsewhere), undefined);
+  assert.equal(run('confirm-external-impact', `cd ${repo} && . ./env.sh && git push origin feature/example`, elsewhere), 'ask');
+  assert.equal(run('confirm-external-impact', `HOME=/ cd ~/repo && git push origin feature/example`, { cwd: base, env: { HOME: base } }), 'ask');
+  // A substitution in the cd itself runs before the cd, in the old directory.
+  assert.equal(run('block-dangerous', `cd ${scratch} 2>"$(rm -rf build)"`), 'ask');
   for (const command of [`cd ${scratch} | true; rm -rf build`, `cd ${base} && rm -rf repo`, `(cd ${scratch}) && rm -rf dist`, `cd ${scratch} & rm -rf build`]) {
     assert.equal(run('block-dangerous', command), 'ask', command);
   }
@@ -259,6 +263,7 @@ test('rm resolves variables assigned from mktemp or a disposable literal', t => 
     'S="$(mktemp -d)"; echo work; rm -rf "$S"',
     'S=$(mktemp -d -p /tmp example.XXXXXX) && touch "$S/a" && rm -rf "$S/a" "${S}"',
     `S=${scratch}/run; mkdir -p "$S"; rm -rf "$S" $S/out`,
+    'S=$(mktemp -d)\necho "$(cat <<<x\necho y)"\nrm -rf "$S"',
     // ${S:?} stops the command when S is empty, so a suffix cannot become /suffix.
     'S=$(mktemp -d); rm -rf "${S:?}" "${S:?}/data"',
     // A pipeline or a tracked cd before the rm does not hide the assignment.
@@ -288,6 +293,15 @@ test('rm resolves variables assigned from mktemp or a disposable literal', t => 
     `S="${scratch}/a b"; rm -rf $S`,
     'S=$(mktemp -d); rm -rf "${S:-/etc}"',
     'S=$(mktemp -d); rm -rf ${S:?}/*',
+    // Builtins can rebind a variable without naming it as a word.
+    'S=$(mktemp -d); declare -n R=S; R=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); eval "$X"; rm -rf "$S"',
+    'S=$(mktemp -d); . ./env.sh; rm -rf "$S"',
+    'S=$(mktemp -d); N=S; printf -v "$N" /etc; rm -rf "$S"',
+    // Unquoted expansions are split on IFS.
+    'S=$(mktemp -d); rm -rf $S',
+    `S=${scratch}/run; IFS=/; rm -rf $S/out`,
+    'S=$(mktemp --dry -d); rm -rf "$S"',
     'echo "$(rm -rf "$S")"; S=$(mktemp -d)',
     `if false\nthen\nS=${scratch}/x\nfi\nrm -rf "$S/y"`,
     'echo | S=$(mktemp -d) && rm -rf "$S/a"',

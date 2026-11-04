@@ -12,11 +12,13 @@
 # Source it; it defines functions and CS_* globals only and runs nothing.
 
 CS_WORDS=()       # word text, quotes removed
-CS_FLAGS=()       # per word: "d" = dynamic (cannot be resolved), "g" = unquoted glob
+CS_FLAGS=()       # per word: "d" = dynamic (cannot be resolved), "g" = unquoted glob,
+                  # "u" = unquoted expansion, "m" = NAME=$(mktemp ...)
 CS_SEG=()         # per word: segment number
 CS_START=()       # per segment: index of its first word
 CS_END=()         # per segment: index after its last word
 CS_PENDING=()     # command texts found inside substitutions, scanned afterwards
+CS_PSEG=()        # per pending text: the segment number it was found in (-1 for the command)
 CS_SEP=()         # per segment number: what started it ("start", "sub", ";", newline, "&&", "||", "|", "|&", "&", "paren", "end")
 CS_DEPTH=()       # per segment number: subshell depth; a substitution starts at 1
 CS_ORIGIN=()      # per segment number: 0 for the command itself, k for its k-th substitution
@@ -29,6 +31,8 @@ CS_CWD=""
 CS_CWD_OK=false   # false when the working directory is unknown or a cd was seen
 CS__CD_SEEN=false
 CS__CD_SEG=-1     # the segment of the cd that set CS_CWD, if any
+CS__STATE_OK=false # no builtin in the command can change variables or the directory unseen
+CS__IFS=false     # the command sets or reads IFS as a word
 CS_SID=""
 CS_ROOTS=()       # physical disposable roots
 CS__ROOTS_DONE=false
@@ -88,7 +92,7 @@ cs__heredoc_bodies() {
     # An unquoted delimiter still expands substitutions inside the body.
     # shellcheck disable=SC2016  # Literal $( and backtick are being matched.
     if [[ "$quoted" != true && ( "$body" == *'$('* || "$body" == *'`'* ) ]]; then
-      CS_PENDING+=("$body")
+      CS_PENDING+=("$body"); CS_PSEG+=("$((CS_NSEG - 1))")
     fi
   done
   cs__heredocs=()
@@ -110,7 +114,10 @@ cs__substitution() {
     case "$c" in
       '<')
         inner+=$c
-        if [[ "${cs__rest:0:2}" != '<<' && "$cs__rest" =~ $opener ]]; then
+        if [[ "${cs__rest:0:2}" == '<<' ]]; then
+          # A here-string, <<<word, has no body.
+          inner+='<<'; cs__rest=${cs__rest:2}
+        elif [[ "$cs__rest" =~ $opener ]]; then
           d=${BASH_REMATCH[2]}; d=${d//\'/}; d=${d//\"/}; d=${d//\\/}
           delims+=("${BASH_REMATCH[1]}|$d")
           inner+=${BASH_REMATCH[0]}; cs__rest=${cs__rest:${#BASH_REMATCH[0]}}
@@ -135,7 +142,7 @@ cs__substitution() {
       '(') depth=$((depth + 1)); inner+=$c ;;
       ')')
         depth=$((depth - 1))
-        if (( depth == 0 )); then CS_PENDING+=("$inner"); return 0; fi
+        if (( depth == 0 )); then CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); return 0; fi
         inner+=$c
         ;;
       "'")
@@ -155,7 +162,7 @@ cs__substitution() {
       \\) inner+="\\${cs__rest:0:1}"; cs__rest=${cs__rest:1} ;;
     esac
   done
-  CS_PENDING+=("$inner")
+  CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG")
 }
 
 # After a substitution: when the word so far is "NAME=" and the substitution
@@ -167,7 +174,8 @@ cs__note_mktemp() {
   [[ "$inner" =~ ^[[:space:]]*mktemp([[:space:]]+[A-Za-z0-9_./@%+,:=-]+)*[[:space:]]*$ ]] || return 0
   read -ra words <<< "$inner"
   for w in "${words[@]:1}"; do
-    [[ "$w" != --dry-run && ! "$w" =~ ^-[A-Za-z]*u ]] || return 0
+    # GNU accepts abbreviations of --dry-run, such as --dry.
+    [[ "$w" != --dr* && ! "$w" =~ ^-[A-Za-z]*u ]] || return 0
   done
   cs__mk=true
 }
@@ -177,7 +185,7 @@ cs__backtick() {
   local re='^([^`\\]|\\.)*`' match
   [[ "$cs__rest" =~ $re ]] || return 1
   match=${BASH_REMATCH[0]}
-  CS_PENDING+=("${match%?}")
+  CS_PENDING+=("${match%?}"); CS_PSEG+=("$CS_NSEG")
   cs__rest=${cs__rest:${#match}}
 }
 
@@ -291,7 +299,7 @@ cs__scan_one() {
         fi
         ;;
       '$')
-        cs__in=true; cs__f+=d
+        cs__in=true; cs__f+='du'
         if [[ "${cs__rest:0:1}" == '(' ]]; then
           before=$cs__w
           cs__rest=${cs__rest:1}; cs__substitution; cs__note_mktemp "$before"; cs__w+="\$(...)"
@@ -330,7 +338,7 @@ cs__scan_one() {
 cs_scan() {
   local k=0 i s LC_ALL=C
   CS_WORDS=(); CS_FLAGS=(); CS_SEG=(); CS_START=(); CS_END=(); CS_NSEG=0; CS_SEP=(); CS_DEPTH=(); CS_ORIGIN=()
-  CS_PENDING=("$1")
+  CS_PENDING=("$1"); CS_PSEG=(-1)
   while (( k < ${#CS_PENDING[@]} )); do
     (( k <= 64 )) || return 1
     if (( k == 0 )); then s=start; else s=sub; fi
@@ -411,6 +419,7 @@ cs_has_word() {
 
 cs_context() {
   CS_CWD=""; CS_CWD_OK=false; CS_SID=""; CS__CD_SEEN=false; CS__CD_SEG=-1
+  cs__state_scan
   if [[ "$1" == /* && -d "$1" ]]; then CS_CWD=$1; CS_CWD_OK=true; fi
   [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]] && CS_SID=$2
   CS__ROOTS_DONE=false; CS__TOP_DONE=false
@@ -448,6 +457,14 @@ cs__simple() {
   done
 }
 
+# cs__has_substitution SEGMENT: true when a substitution or here-document
+# body was found in the segment.
+cs__has_substitution() {
+  local k
+  for ((k = 1; k < ${#CS_PSEG[@]}; k++)); do [[ "${CS_PSEG[k]}" != "$1" ]] || return 0; done
+  return 1
+}
+
 # cs_cd SEGMENT: true when the segment is cd, pushd or popd; the caller skips
 # it. A cd that opens the command, at the top level, to a literal existing
 # directory sets the working directory for everything after it. Any other
@@ -458,8 +475,9 @@ cs_cd() {
   first=$(cs_segments | head -n 1)
   next=${CS_SEP[seg + 1]:-end}
   if [[ "$CS__CD_SEEN" == false && "$seg" == "$first" && "$CS_VIA" == direct && "${CS_WORDS[CS_I]}" == cd \
-        && "${CS_SEP[0]}" == start && ( "$next" == '&&' || "$next" == ';' || "$next" == $'\n' || "$next" == end ) ]] \
-      && cs__seps_all 0 "$seg" ';' $'\n' && cs__plain "$seg"; then
+        && "${CS_SEP[0]}" == start && ( "$next" == '&&' || "$next" == ';' || "$next" == $'\n' || "$next" == end ) \
+        && "$CS_I" == "${CS_START[seg]}" && "$CS__STATE_OK" == true ]] \
+      && cs__seps_all 0 "$seg" ';' $'\n' && cs__plain "$seg" && ! cs__has_substitution "$seg"; then
     end=${CS_END[seg]}
     for ((j = CS_I + 1; j < end; j++)); do
       w=${CS_WORDS[j]}; f=${CS_FLAGS[j]}
@@ -495,7 +513,7 @@ cs_cd() {
 # and appear nowhere else as a word (read, for, export, ...).
 cs__var_operand() {
   local word=$1 flags=$2 seg=$3 name rest k a=-1 count=0 w sa value vflags guarded=false
-  [[ "$flags" != *g* ]] || return 1
+  [[ "$flags" != *g* && "$CS__STATE_OK" == true ]] || return 1
   if [[ "$word" =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)(:\?[^}]*)?\}(.*)$ ]]; then
     name=${BASH_REMATCH[1]}; rest=${BASH_REMATCH[3]}
     [[ -z "${BASH_REMATCH[2]}" ]] || guarded=true
@@ -526,13 +544,39 @@ cs__var_operand() {
     || cs__seps_all "$sa" "$seg" '&&' || return 1
   value=${w#"$name="}
   if [[ "$vflags" == *m* ]]; then
+    # TMPDIR may hold spaces; only a quoted expansion keeps the path whole.
+    [[ "$flags" != *u* ]] || return 1
     # A failed mktemp leaves NAME empty; a suffix would then name /suffix
     # unless ${NAME:?} stops the command first.
     [[ -z "$rest" || "$guarded" == true ]] || cs__seps_all "$sa" "$seg" '&&'
     return
   fi
   [[ -n "$value" && "$vflags" != *[dg]* && "$value" != *[[:space:]]* ]] || return 1
+  [[ "$flags" != *u* || "$CS__IFS" == false ]] || return 1
   cs_path_disposable "$value$rest" "" || cs_path_artifact "$value$rest" ""
+}
+
+# cs__state_scan: set CS__STATE_OK unless some segment runs a builtin that can
+# rebind a variable or change the directory without naming it (eval, source,
+# declare -n, printf -v, ...) or a program whose name is dynamic. Shell
+# functions and aliases from the user's environment remain unseen.
+cs__state_scan() {
+  local seg i w
+  CS__STATE_OK=true; CS__IFS=false
+  for w in ${CS_WORDS[@]+"${CS_WORDS[@]}"}; do
+    [[ ! "$w" =~ ^IFS(\+?=|$) ]] || CS__IFS=true
+  done
+  for seg in $(cs_segments); do
+    i=${CS_START[seg]}
+    while (( i < CS_END[seg] )) && [[ "${CS_WORDS[i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*\+?= ]]; do i=$((i + 1)); done
+    (( i < CS_END[seg] )) || continue
+    if [[ "${CS_FLAGS[i]}" == *d* ]]; then CS__STATE_OK=false; return 0; fi
+    if cs_invocation "$seg" 'eval|source|\.|declare|typeset|local|export|readonly|unset|read|mapfile|readarray|let|set|shopt|alias|unalias|enable|exec|builtin|getopts|hash|pushd|popd'; then
+      CS__STATE_OK=false; return 0
+    fi
+    if cs_invocation "$seg" printf && cs_has_word "$seg" '-v.*'; then CS__STATE_OK=false; return 0; fi
+  done
+  return 0
 }
 
 # Lexically normalize an absolute or working-directory-relative path into
