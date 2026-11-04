@@ -326,6 +326,11 @@ test('a here-document inside a command substitution is skipped as text', t => {
   // An unquoted delimiter still expands substitutions in the body.
   assert.equal(run('block-dangerous', 'echo "$(cat <<EOF\n$(rm -rf /)\nEOF\n)"'), 'ask');
   assert.equal(run('confirm-external-impact', `gh pr create --title example ${body}`), 'ask');
+  // << in arithmetic is a shift, and a delimiter that never comes cannot hide the rest.
+  assert.equal(run('block-dangerous', 'x=$((1 << 2\n))\nrm -rf /'), 'ask');
+  assert.equal(run('block-dangerous', '((x = 1 << 2\n))\nrm -rf /'), 'ask');
+  assert.equal(run('block-dangerous', 'cat <<EOF\nrm -rf /'), 'ask');
+  assert.equal(run('block-dangerous', 'echo $((1 << 2)) "$(cat <<<x)"'), undefined);
 });
 
 test('auto mode defers only the opted-in confirmations to the classifier', t => {

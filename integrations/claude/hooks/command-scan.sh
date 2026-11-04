@@ -30,6 +30,7 @@ CS_TEXT=""        # words of the current invocation joined by single spaces
 CS_CWD=""
 CS_CWD_OK=false   # false when the working directory is unknown or a cd was seen
 CS__CD_SEEN=false
+CS__UNCLOSED=false # a here-document delimiter never appeared
 CS__CD_SEG=-1     # the segment of the cd that set CS_CWD, if any
 CS__STATE_OK=false # no builtin in the command can change variables or the directory unseen
 CS__DIR_OK=false  # no builtin in the command can change the directory unseen
@@ -74,12 +75,12 @@ cs__segment_end() {
 
 # Consume the body of every here-document opened on the line just ended.
 cs__heredoc_bodies() {
-  local entry mode quoted delim line body
+  local entry mode quoted delim line body found
   (( ${#cs__heredocs[@]} > 0 )) || return 0
   for entry in "${cs__heredocs[@]}"; do
     mode=${entry%%|*}; entry=${entry#*|}
     quoted=${entry%%|*}; delim=${entry#*|}
-    body=""
+    body=""; found=false
     while [[ -n "$cs__rest" ]]; do
       if [[ "$cs__rest" == *$'\n'* ]]; then
         line=${cs__rest%%$'\n'*}; cs__rest=${cs__rest#*$'\n'}
@@ -87,9 +88,12 @@ cs__heredoc_bodies() {
         line=$cs__rest; cs__rest=""
       fi
       [[ "$mode" == - ]] && line=${line#"${line%%[!$'\t']*}"}
-      [[ "$line" == "$delim" ]] && break
+      [[ "$line" == "$delim" ]] && { found=true; break; }
       body+=$line$'\n'
     done
+    # A delimiter that never comes, as after an arithmetic shift (( x << 2 )),
+    # would hide the rest of the command; fail closed instead.
+    [[ "$found" == true ]] || return 1
     # An unquoted delimiter still expands substitutions inside the body.
     # shellcheck disable=SC2016  # Literal $( and backtick are being matched.
     if [[ "$quoted" != true && ( "$body" == *'$('* || "$body" == *'`'* ) ]]; then
@@ -103,9 +107,11 @@ cs__heredoc_bodies() {
 # Here-document bodies are copied as text, so quotes or parentheses in them
 # cannot end the substitution early.
 cs__substitution() {
-  local depth=1 inner="" c d line run='^[^()'\''"\\<'$'\n'']+' dq='^([^"\\]|\\.)*"'
+  local depth=1 inner="" c d line found arith=false run='^[^()'\''"\\<'$'\n'']+' dq='^([^"\\]|\\.)*"'
   local opener='^<(-?)[[:space:]]*('\''[^'\'']*'\''|"[^"]*"|[^][:space:];&|()<>'\''"]+)'
   local -a delims=()
+  # In $(( )) a << is a shift, not a here-document.
+  [[ "${cs__rest:0:1}" != '(' ]] || arith=true
   while [[ -n "$cs__rest" ]]; do
     if [[ "$cs__rest" =~ $run ]]; then
       inner+=${BASH_REMATCH[0]}; cs__rest=${cs__rest:${#BASH_REMATCH[0]}}
@@ -118,7 +124,7 @@ cs__substitution() {
         if [[ "${cs__rest:0:2}" == '<<' ]]; then
           # A here-string, <<<word, has no body.
           inner+='<<'; cs__rest=${cs__rest:2}
-        elif [[ "$cs__rest" =~ $opener ]]; then
+        elif [[ "$arith" == false && "$cs__rest" =~ $opener ]]; then
           d=${BASH_REMATCH[2]}; d=${d//\'/}; d=${d//\"/}; d=${d//\\/}
           delims+=("${BASH_REMATCH[1]}|$d")
           inner+=${BASH_REMATCH[0]}; cs__rest=${cs__rest:${#BASH_REMATCH[0]}}
@@ -127,6 +133,7 @@ cs__substitution() {
       $'\n')
         inner+=$c
         for d in ${delims[@]+"${delims[@]}"}; do
+          found=false
           while [[ -n "$cs__rest" ]]; do
             if [[ "$cs__rest" == *$'\n'* ]]; then
               line=${cs__rest%%$'\n'*}; cs__rest=${cs__rest#*$'\n'}
@@ -135,8 +142,9 @@ cs__substitution() {
             fi
             inner+=$line$'\n'
             [[ "${d%%|*}" == - ]] && line=${line#"${line%%[!$'\t']*}"}
-            [[ "$line" == "${d#*|}" ]] && break
+            [[ "$line" == "${d#*|}" ]] && { found=true; break; }
           done
+          [[ "$found" == true ]] || CS__UNCLOSED=true
         done
         delims=()
         ;;
@@ -255,7 +263,7 @@ cs__scan_one() {
     c=${cs__rest:0:1}; cs__rest=${cs__rest:1}
     case "$c" in
       ' '|$'\t') cs__flush ;;
-      $'\n') cs__segment_end $'\n'; cs__heredoc_bodies ;;
+      $'\n') cs__segment_end $'\n'; cs__heredoc_bodies || return 1 ;;
       ';') cs__segment_end ';' ;;
       '(') cs__depth=$((cs__depth + 1)); cs__segment_end paren ;;
       ')') cs__depth=$((cs__depth - 1)); cs__segment_end paren ;;
@@ -339,11 +347,12 @@ cs__scan_one() {
 cs_scan() {
   local k=0 i s LC_ALL=C
   CS_WORDS=(); CS_FLAGS=(); CS_SEG=(); CS_START=(); CS_END=(); CS_NSEG=0; CS_SEP=(); CS_DEPTH=(); CS_ORIGIN=()
-  CS_PENDING=("$1"); CS_PSEG=(-1)
+  CS_PENDING=("$1"); CS_PSEG=(-1); CS__UNCLOSED=false
   while (( k < ${#CS_PENDING[@]} )); do
     (( k <= 64 )) || return 1
     if (( k == 0 )); then s=start; else s=sub; fi
     cs__scan_one "${CS_PENDING[k]}" "$s" "$k" || return 1
+    [[ "$CS__UNCLOSED" == false ]] || return 1
     k=$((k + 1))
   done
   for ((i = 0; i < ${#CS_WORDS[@]}; i++)); do

@@ -13,7 +13,8 @@ All notable changes to this project are documented in this file.
   `"$NAME"`, `"${NAME:?}"` and `"$NAME/literal"` resolve when NAME is set once,
   at the top level, before the `rm`, from `mktemp` or a disposable literal
   path. A here-document inside `$( )` no longer makes the command
-  unparseable.
+  unparseable, and one whose delimiter never appears asks instead of hiding
+  the rest of the command.
 - Claude hooks: `CLAUDE_HOOK_AUTO_DEFER` (`pr-create`, `pr-merge`,
   `push-protected`) leaves those confirmations to the auto mode classifier when
   the session is in auto mode. Unset by default; other modes always ask.
