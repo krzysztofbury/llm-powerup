@@ -619,17 +619,29 @@ cs__var_operand() {
   cs_path_disposable "$value$rest" "" || cs_path_artifact "$value$rest" ""
 }
 
-# cs__set_options SEGMENT: true when the segment is `set` with only literal
-# option words (`set -e`, `set -euo pipefail`). Those change shell options,
-# never a variable, the directory or what runs; any other argument, including
-# `--` and positional parameters, still counts as a state change.
+# cs__set_options SEGMENT: true when the segment is `set` with only the
+# options that stop or trace a command (e, u, x, and -o pipefail, errexit,
+# nounset, xtrace), in either - or + form, as in `set -euo pipefail`. Every
+# other option can change how later words run (-k turns NAME=value arguments
+# into assignments; -P, -B, -f and posix change cd, braces and globs), and any
+# other argument, including `--` and positional parameters, is a state change.
 cs__set_options() {
-  local j
+  local j w named=false
   cs_invocation "$1" set && [[ "$CS_VIA" == direct ]] || return 1
   (( CS_I + 1 < CS_END[$1] )) || return 1
   for ((j = CS_I + 1; j < CS_END[$1]; j++)); do
-    [[ -z "${CS_FLAGS[j]}" && "${CS_WORDS[j]}" =~ ^([-+][A-Za-z]+|[a-z]+)$ ]] || return 1
+    w=${CS_WORDS[j]}
+    [[ -z "${CS_FLAGS[j]}" ]] || return 1
+    if [[ "$named" == true ]]; then
+      [[ "$w" =~ ^(pipefail|errexit|nounset|xtrace)$ ]] || return 1
+      named=false
+    elif [[ "$w" =~ ^[-+][eux]*o$ ]]; then
+      named=true
+    else
+      [[ "$w" =~ ^[-+][eux]+$ ]] || return 1
+    fi
   done
+  [[ "$named" == false ]]
 }
 
 # cs__state_scan: set CS__DIR_OK unless some segment runs code the scanner

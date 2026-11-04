@@ -6,8 +6,9 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Claude hooks: `set` with only literal options (`set -e`, `set -euo pipefail`)
-  no longer makes a leading `cd` or variables unresolved, so
+- Claude hooks: `set` with only the options that stop or trace a command (`e`,
+  `u`, `x`, and `-o pipefail`, `errexit`, `nounset`, `xtrace`) no longer makes
+  a leading `cd` or variables unresolved, so
   `cd repo && set -e; git push` of a feature branch passes. Other state
   builtins still do: an array subscript in arithmetic or a `mapfile -C`
   callback can run code.

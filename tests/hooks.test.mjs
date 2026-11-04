@@ -254,6 +254,7 @@ test('a leading cd to an existing directory sets the working directory', t => {
   for (const command of [
     `cd ${repo} && set -e; git push -u origin feature/example`,
     `cd ${repo} && set -euo pipefail && git push origin feature/example`,
+    `cd ${repo} && set +x -o errexit && git push origin feature/example`,
   ]) {
     assert.equal(run('confirm-external-impact', command, elsewhere), undefined, command);
   }
@@ -265,6 +266,12 @@ test('a leading cd to an existing directory sets the working directory', t => {
     `cd ${repo} && let 'a[$(cd /)]' && git push origin feature/example`,
     `cd ${repo} && mapfile -C 'cd /' -c 1 a </dev/null; git push origin feature/example`,
     `cd ${repo} && set -- "$1" && git push origin feature/example`,
+    // Options that change how later words run are not harmless.
+    `cd ${repo} && set -k; git push origin feature/example`,
+    `cd ${repo} && set -P; git push origin feature/example`,
+    `cd ${repo} && set +B && git push origin feature/example`,
+    `cd ${repo} && set -o posix && git push origin feature/example`,
+    `cd ${repo} && set -o pipefail -k && git push origin feature/example`,
     `cd ${repo} && export GIT_PAGER=cat && git push origin feature/example`,
   ]) {
     assert.equal(run('confirm-external-impact', command, elsewhere), 'ask', command);
