@@ -333,6 +333,14 @@ test('a here-document inside a command substitution is skipped as text', t => {
   assert.equal(run('block-dangerous', '((x = 1 << EOF))\nrm -rf /\nEOF'), 'ask');
   assert.equal(run('block-dangerous', 'echo "$((1 << EOF\n$(rm -rf /)\nEOF\n))"'), 'ask');
   assert.equal(run('block-dangerous', 'echo $((1 << EOF)) && echo done'), undefined);
+  // An unquoted here-document body runs $( ) even inside quotes or after #.
+  const { repo: tree, run: inTree } = fixture(t);
+  assert.ok(tree);
+  assert.equal(inTree('block-dangerous', "cat <<EOF\n'$(rm -rf src)'\nEOF"), 'ask');
+  assert.equal(inTree('block-dangerous', 'cat <<EOF\n# $(rm -rf src)\nEOF'), 'ask');
+  assert.equal(inTree('block-dangerous', "cat <<EOF\nit's $(date)\nEOF"), undefined);
+  // $(( that is not arithmetic is a command substitution with a subshell.
+  assert.equal(run('block-dangerous', '$((cat <<EOF\nx\nEOF\n) )'), 'ask');
   assert.equal(run('block-dangerous', 'echo $((1 << 2)) "$(cat <<<x)"'), undefined);
 });
 

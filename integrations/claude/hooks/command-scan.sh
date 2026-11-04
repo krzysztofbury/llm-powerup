@@ -96,12 +96,39 @@ cs__heredoc_bodies() {
     # would hide the rest of the command; fail closed instead.
     [[ "$found" == true ]] || return 1
     # An unquoted delimiter still expands substitutions inside the body.
-    # shellcheck disable=SC2016  # Literal $( and backtick are being matched.
-    if [[ "$quoted" != true && ( "$body" == *'$('* || "$body" == *'`'* ) ]]; then
-      CS_PENDING+=("$body"); CS_PSEG+=("$((CS_NSEG - 1))"); CS_PARITH+=(false)
-    fi
+    if [[ "$quoted" != true ]]; then cs__body_substitutions "$body" || return 1; fi
   done
   cs__heredocs=()
+}
+
+# Queue the $( ) and backtick substitutions of an unquoted here-document body.
+# Quotes and # are plain text there, so they cannot hide a substitution.
+cs__body_substitutions() {
+  local saved=$cs__rest c run='^[^\\$`]+'
+  cs__rest=$1
+  while [[ -n "$cs__rest" ]]; do
+    if [[ "$cs__rest" =~ $run ]]; then cs__rest=${cs__rest:${#BASH_REMATCH[0]}}; continue; fi
+    c=${cs__rest:0:1}; cs__rest=${cs__rest:1}
+    case "$c" in
+      \\) cs__rest=${cs__rest:1} ;;
+      '$') [[ "${cs__rest:0:1}" != '(' ]] || { cs__rest=${cs__rest:1}; cs__substitution; } ;;
+      '`') cs__backtick || { cs__rest=$saved; return 1; } ;;
+    esac
+  done
+  cs__rest=$saved
+}
+
+# cs__arith_body TEXT: true when TEXT, the inside of $( ), is "( ... )" with
+# the first parenthesis closing at the end, so $(( )) was arithmetic.
+cs__arith_body() {
+  local t=$1 i d=0
+  [[ "$t" == '('*')' ]] || return 1
+  for ((i = 0; i < ${#t}; i++)); do
+    case "${t:i:1}" in
+      '(') d=$((d + 1)) ;;
+      ')') d=$((d - 1)); (( d > 0 || i == ${#t} - 1 )) || return 1 ;;
+    esac
+  done
 }
 
 # After "$(" or "<(": collect the text up to the matching ")" for a later scan.
@@ -152,7 +179,15 @@ cs__substitution() {
       '(') depth=$((depth + 1)); inner+=$c ;;
       ')')
         depth=$((depth - 1))
-        if (( depth == 0 )); then CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=("$arith"); return 0; fi
+        if (( depth == 0 )); then
+          if [[ "$arith" == true ]] && ! cs__arith_body "$inner"; then
+            # Not arithmetic after all: a subshell whose << went unchecked.
+            arith=false
+            [[ "$inner" != *'<<'* ]] || CS__UNCLOSED=true
+          fi
+          CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=("$arith")
+          return 0
+        fi
         inner+=$c
         ;;
       "'")
