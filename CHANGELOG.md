@@ -6,9 +6,11 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- Claude hooks: a leading `cd` keeps its directory when a later builtin only
-  rebinds variables, so `cd repo && set -e; git push` of a feature branch passes.
-  `set`, `declare`, `export` and `read` still leave variables unresolved.
+- Claude hooks: `set` with only literal options (`set -e`, `set -euo pipefail`)
+  no longer makes a leading `cd` or variables unresolved, so
+  `cd repo && set -e; git push` of a feature branch passes. Other state
+  builtins still do: an array subscript in arithmetic or a `mapfile -C`
+  callback can run code.
 - Claude hooks ask less for commands they can now resolve. A `cd` that opens
   the command, at the top level, to a literal existing directory sets the
   working directory for the rest of it, so `cd repo && git push` and

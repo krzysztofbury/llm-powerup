@@ -531,9 +531,7 @@ cs__has_substitution() {
 # cs_cd SEGMENT: true when the segment is cd, pushd or popd; the caller skips
 # it. A cd that opens the command, at the top level, to a literal existing
 # directory sets the working directory for everything after it. Any other
-# directory change makes the working directory unknown. Builtins that only
-# rebind variables (set, declare, read, ...) cannot move it, so only code the
-# scanner cannot see (CS__DIR_OK) does.
+# directory change makes the working directory unknown.
 cs_cd() {
   local seg=$1 j end w f operand="" option="" target first next
   cs_invocation "$seg" 'cd|pushd|popd' || return 1
@@ -541,7 +539,7 @@ cs_cd() {
   next=${CS_SEP[seg + 1]:-end}
   if [[ "$CS__CD_SEEN" == false && "$seg" == "$first" && "$CS_VIA" == direct && "${CS_WORDS[CS_I]}" == cd \
         && "${CS_SEP[0]}" == start && ( "$next" == '&&' || "$next" == ';' || "$next" == $'\n' || "$next" == end ) \
-        && "$CS_I" == "${CS_START[seg]}" && "$CS__DIR_OK" == true ]] \
+        && "$CS_I" == "${CS_START[seg]}" && "$CS__STATE_OK" == true ]] \
       && cs__seps_all 0 "$seg" ';' $'\n' && cs__plain "$seg" && ! cs__has_substitution "$seg"; then
     end=${CS_END[seg]}
     for ((j = CS_I + 1; j < end; j++)); do
@@ -621,6 +619,19 @@ cs__var_operand() {
   cs_path_disposable "$value$rest" "" || cs_path_artifact "$value$rest" ""
 }
 
+# cs__set_options SEGMENT: true when the segment is `set` with only literal
+# option words (`set -e`, `set -euo pipefail`). Those change shell options,
+# never a variable, the directory or what runs; any other argument, including
+# `--` and positional parameters, still counts as a state change.
+cs__set_options() {
+  local j
+  cs_invocation "$1" set && [[ "$CS_VIA" == direct ]] || return 1
+  (( CS_I + 1 < CS_END[$1] )) || return 1
+  for ((j = CS_I + 1; j < CS_END[$1]; j++)); do
+    [[ -z "${CS_FLAGS[j]}" && "${CS_WORDS[j]}" =~ ^([-+][A-Za-z]+|[a-z]+)$ ]] || return 1
+  done
+}
+
 # cs__state_scan: set CS__DIR_OK unless some segment runs code the scanner
 # cannot see (eval, source, trap, a function definition, a dynamic program
 # name, ...), which may change the directory; set CS__STATE_OK when, in
@@ -646,6 +657,9 @@ cs__state_scan() {
     if [[ "${CS_FLAGS[i]}" == *d* ]] \
         || cs_invocation "$seg" 'eval|source|\.|exec|builtin|command|trap|coproc|enable|alias|unalias|pushd|popd'; then
       CS__DIR_OK=false
+    fi
+    if cs__set_options "$seg"; then
+      continue
     fi
     if cs_invocation "$seg" 'declare|typeset|local|export|readonly|unset|read|mapfile|readarray|let|set|shopt|getopts|hash' \
         || { cs_invocation "$seg" printf && cs_has_word "$seg" '-v.*'; }; then
