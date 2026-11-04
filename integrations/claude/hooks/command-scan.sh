@@ -619,6 +619,19 @@ cs__var_operand() {
   cs_path_disposable "$value$rest" "" || cs_path_artifact "$value$rest" ""
 }
 
+# cs__set_options SEGMENT: true when the segment is `set` with only literal
+# option words (`set -e`, `set -euo pipefail`). Those change shell options,
+# never a variable, the directory or what runs; any other argument, including
+# `--` and positional parameters, still counts as a state change.
+cs__set_options() {
+  local j
+  cs_invocation "$1" set && [[ "$CS_VIA" == direct ]] || return 1
+  (( CS_I + 1 < CS_END[$1] )) || return 1
+  for ((j = CS_I + 1; j < CS_END[$1]; j++)); do
+    [[ -z "${CS_FLAGS[j]}" && "${CS_WORDS[j]}" =~ ^([-+][A-Za-z]+|[a-z]+)$ ]] || return 1
+  done
+}
+
 # cs__state_scan: set CS__DIR_OK unless some segment runs code the scanner
 # cannot see (eval, source, trap, a function definition, a dynamic program
 # name, ...), which may change the directory; set CS__STATE_OK when, in
@@ -644,6 +657,9 @@ cs__state_scan() {
     if [[ "${CS_FLAGS[i]}" == *d* ]] \
         || cs_invocation "$seg" 'eval|source|\.|exec|builtin|command|trap|coproc|enable|alias|unalias|pushd|popd'; then
       CS__DIR_OK=false
+    fi
+    if cs__set_options "$seg"; then
+      continue
     fi
     if cs_invocation "$seg" 'declare|typeset|local|export|readonly|unset|read|mapfile|readarray|let|set|shopt|getopts|hash' \
         || { cs_invocation "$seg" printf && cs_has_word "$seg" '-v.*'; }; then

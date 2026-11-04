@@ -250,6 +250,26 @@ test('a leading cd to an existing directory sets the working directory', t => {
     assert.equal(run('confirm-external-impact', command, elsewhere), 'ask', command);
   }
   assert.equal(run('confirm-external-impact', `cd ${repo} && git fetch -q | cat; git push origin feature/example`, elsewhere), undefined);
+  // set with literal options changes neither a variable nor the directory.
+  for (const command of [
+    `cd ${repo} && set -e; git push -u origin feature/example`,
+    `cd ${repo} && set -euo pipefail && git push origin feature/example`,
+  ]) {
+    assert.equal(run('confirm-external-impact', command, elsewhere), undefined, command);
+  }
+  assert.equal(run('block-dangerous', `cd ${scratch} && set -e; rm -rf build`), undefined);
+  // Other state builtins can run code: an array subscript in arithmetic or a
+  // mapfile callback can change the directory unseen.
+  for (const command of [
+    `cd ${repo} && declare -i x='a[$(cd /)]' && git push origin feature/example`,
+    `cd ${repo} && let 'a[$(cd /)]' && git push origin feature/example`,
+    `cd ${repo} && mapfile -C 'cd /' -c 1 a </dev/null; git push origin feature/example`,
+    `cd ${repo} && set -- "$1" && git push origin feature/example`,
+    `cd ${repo} && export GIT_PAGER=cat && git push origin feature/example`,
+  ]) {
+    assert.equal(run('confirm-external-impact', command, elsewhere), 'ask', command);
+  }
+  assert.equal(run('block-dangerous', `cd ${scratch} && read -r out && rm -rf "$out"`), 'ask');
   assert.equal(run('confirm-external-impact', `cd ${repo} && . ./env.sh && git push origin feature/example`, elsewhere), 'ask');
   assert.equal(run('confirm-external-impact', `HOME=/ cd ~/repo && git push origin feature/example`, { cwd: base, env: { HOME: base } }), 'ask');
   // A substitution in the cd itself runs before the cd, in the old directory.
