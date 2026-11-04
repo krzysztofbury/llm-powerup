@@ -222,6 +222,92 @@ test('git push passes for feature branches and asks for protected or forced push
   assert.equal(run('confirm-external-impact', 'git push origin feature/example'), 'ask');
 });
 
+test('a leading cd to an existing directory sets the working directory', t => {
+  const { base, repo, scratch, run } = fixture(t);
+  const elsewhere = { cwd: base };
+  for (const command of [`cd ${repo} && git push -u origin feature/example`, `cd ${repo}; git push origin HEAD`]) {
+    assert.equal(run('confirm-external-impact', command, elsewhere), undefined, command);
+  }
+  assert.equal(run('confirm-external-impact', 'cd .. && git push origin feature/example', { cwd: join(repo, 'src') }), undefined);
+  assert.equal(run('confirm-external-impact', 'cd ~/repo && git push origin feature/example', { cwd: base, env: { HOME: base } }), undefined);
+  assert.equal(run('confirm-external-impact', 'cd ~other/repo && git push origin feature/example', { cwd: base, env: { HOME: base } }), 'ask');
+  assert.equal(run('block-dangerous', `cd ${scratch} && rm -rf build out.log`), undefined);
+  assert.equal(run('block-dangerous', `cd ${scratch}/missing && rm -rf build`), 'ask');
+  for (const command of [
+    `cd ${repo} && git push origin main`,
+    `(cd ${repo}); git push origin feature/example`,
+    `true || cd ${repo}; git push origin feature/example`,
+    `echo start && cd ${repo} && git push origin feature/example`,
+    `cd ${repo} || exit; git push origin feature/example`,
+    `cd ${repo} | cat; git push origin feature/example`,
+    `cd ${repo} && cd ${base} && git push origin feature/example`,
+    `cd "$HOME" && git push origin feature/example`,
+    'cd - && git push origin feature/example',
+  ]) {
+    assert.equal(run('confirm-external-impact', command, elsewhere), 'ask', command);
+  }
+  assert.equal(run('confirm-external-impact', `cd ${repo} && git fetch -q | cat; git push origin feature/example`, elsewhere), undefined);
+  for (const command of [`cd ${scratch} | true; rm -rf build`, `cd ${base} && rm -rf repo`, `(cd ${scratch}) && rm -rf dist`, `cd ${scratch} & rm -rf build`]) {
+    assert.equal(run('block-dangerous', command), 'ask', command);
+  }
+});
+
+test('rm resolves variables assigned from mktemp or a disposable literal', t => {
+  const { scratch, run } = fixture(t);
+  for (const command of [
+    'S=$(mktemp -d) && rm -rf "$S"',
+    'S="$(mktemp -d)"; echo work; rm -rf "$S"',
+    'S=$(mktemp -d -p /tmp example.XXXXXX) && touch "$S/a" && rm -rf "$S/a" "${S}"',
+    `S=${scratch}/run; mkdir -p "$S"; rm -rf "$S" $S/out`,
+    // ${S:?} stops the command when S is empty, so a suffix cannot become /suffix.
+    'S=$(mktemp -d); rm -rf "${S:?}" "${S:?}/data"',
+    // A pipeline or a tracked cd before the rm does not hide the assignment.
+    'S=$(mktemp -d) && echo "$S" | cat; rm -rf "${S:?}"',
+    `cd ${scratch} && S=$(mktemp -d) && ls "$S" | cat; rm -rf "\${S:?}/a"`,
+  ]) {
+    assert.equal(run('block-dangerous', command), undefined, command);
+  }
+  for (const command of [
+    'rm -rf "$UNKNOWN"',
+    'S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); export S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); read -r S; rm -rf "$S"',
+    'S=$(mktemp -d); for S in /etc; do rm -rf "$S"; done',
+    'S=$(mktemp -d); eval S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); S[0]=/etc; rm -rf "$S"',
+    'S=$(mktemp -u); rm -rf "$S"',
+    'S=$(mktemp -d); rm -rf "$S/.."',
+    'S=$(mktemp -d); rm -rf "$S/x"',
+    'S=$(mktemp -d) /bin/true; rm -rf "$S"',
+    'false && S=$(mktemp -d); rm -rf "$S"',
+    'S=$(mktemp -d) || S=/etc; rm -rf "$S"',
+    '(S=$(mktemp -d)); rm -rf "$S"',
+    'S=$(mktemp -d) && rm -rf "$S"/*',
+    'S=$(mktemp -d) && rm -rf "$S$T"',
+    `S="${scratch}/a b"; rm -rf $S`,
+    'S=$(mktemp -d); rm -rf "${S:-/etc}"',
+    'S=$(mktemp -d); rm -rf ${S:?}/*',
+    'echo "$(rm -rf "$S")"; S=$(mktemp -d)',
+    `if false\nthen\nS=${scratch}/x\nfi\nrm -rf "$S/y"`,
+    'echo | S=$(mktemp -d) && rm -rf "$S/a"',
+    'S=$(mktemp -d) & rm -rf "$S"',
+    'true && S=$(mktemp -d); rm -rf "$S/a"',
+  ]) {
+    assert.equal(run('block-dangerous', command), 'ask', command);
+  }
+});
+
+test('a here-document inside a command substitution is skipped as text', t => {
+  const { run } = fixture(t);
+  const body = "--body \"$(cat <<'EOF'\nIt doesn't parse (yet); see `notes`.\nEOF\n)\"";
+  assert.equal(run('confirm-external-impact', `gh issue create --title example ${body}`), undefined);
+  assert.equal(run('block-dangerous', `git commit -q -m example ${body}`), undefined);
+  // An unquoted delimiter still expands substitutions in the body.
+  assert.equal(run('block-dangerous', 'echo "$(cat <<EOF\n$(rm -rf /)\nEOF\n)"'), 'ask');
+  assert.equal(run('confirm-external-impact', `gh pr create --title example ${body}`), 'ask');
+});
+
 test('allowlisted development databases may be changed', t => {
   const { run } = fixture(t);
   for (const command of [

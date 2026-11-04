@@ -42,8 +42,7 @@ sql_clients='psql|mysql|mariadb|sqlite3|pgcli|mycli|cockroach|clickhouse-client|
 sql_client_seen=false
 
 for segment in $(cs_segments); do
-  if cs_invocation "$segment" 'cd|pushd|popd'; then
-    CS_CWD_OK=false
+  if cs_cd "$segment"; then
     continue
   fi
   if cs_invocation "$segment" 'rm|rmdir'; then
