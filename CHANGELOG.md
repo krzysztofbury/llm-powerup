@@ -6,6 +6,18 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Claude hooks ask less for commands they can now resolve. A `cd` that opens
+  the command, at the top level, to a literal existing directory sets the
+  working directory for the rest of it, so `cd repo && git push` and
+  `cd scratch && rm -rf out` are judged in that directory. `rm` operands
+  `"$NAME"`, `"${NAME:?}"` and `"$NAME/literal"` resolve when NAME is set once,
+  at the top level, before the `rm`, from `mktemp` or a disposable literal
+  path. A here-document inside `$( )` no longer makes the command
+  unparseable, and one whose delimiter never appears asks instead of hiding
+  the rest of the command.
+- Claude hooks: `CLAUDE_HOOK_AUTO_DEFER` (`pr-create`, `pr-merge`,
+  `push-protected`) leaves those confirmations to the auto mode classifier when
+  the session is in auto mode. Unset by default; other modes always ask.
 - AGENTS.md: take commit SHAs, image digests and run IDs from the command that
   produces them, never retype them.
 - AGENTS.md: wait on CI by run ID and report outlier jobs; keep the full

@@ -12,11 +12,17 @@
 # Source it; it defines functions and CS_* globals only and runs nothing.
 
 CS_WORDS=()       # word text, quotes removed
-CS_FLAGS=()       # per word: "d" = dynamic (cannot be resolved), "g" = unquoted glob
+CS_FLAGS=()       # per word: "d" = dynamic (cannot be resolved), "g" = unquoted glob,
+                  # "u" = unquoted expansion, "m" = NAME=$(mktemp ...)
 CS_SEG=()         # per word: segment number
 CS_START=()       # per segment: index of its first word
 CS_END=()         # per segment: index after its last word
 CS_PENDING=()     # command texts found inside substitutions, scanned afterwards
+CS_PSEG=()        # per pending text: the segment number it was found in (-1 for the command)
+CS_PARITH=()      # per pending text: true for the body of $(( )), where << is a shift
+CS_SEP=()         # per segment number: what started it ("start", "sub", ";", newline, "&&", "||", "|", "|&", "&", "paren", "end")
+CS_DEPTH=()       # per segment number: subshell depth; a substitution starts at 1
+CS_ORIGIN=()      # per segment number: 0 for the command itself, k for its k-th substitution
 CS_I=0            # index of the program word found by cs_invocation
 CS_VIA=direct     # direct, wrapper (sudo, env, xargs, ...), or exec (docker exec, ssh, ...)
 CS_WRAPPER=""     # program name of the wrapper, if any
@@ -24,6 +30,12 @@ CS_PRIV=false     # true when a privilege wrapper (sudo, doas, ...) precedes the
 CS_TEXT=""        # words of the current invocation joined by single spaces
 CS_CWD=""
 CS_CWD_OK=false   # false when the working directory is unknown or a cd was seen
+CS__CD_SEEN=false
+CS__UNCLOSED=false # a here-document delimiter never appeared
+CS__CD_SEG=-1     # the segment of the cd that set CS_CWD, if any
+CS__STATE_OK=false # no builtin in the command can change variables or the directory unseen
+CS__DIR_OK=false  # no builtin in the command can change the directory unseen
+CS__IFS=false     # the command sets or reads IFS as a word
 CS_SID=""
 CS_ROOTS=()       # physical disposable roots
 CS__ROOTS_DONE=false
@@ -35,37 +47,42 @@ CS_EXEC_HOSTS='docker|podman|nerdctl|kubectl|oc|uv|poetry|pipenv|pdm|hatch|rye'
 CS_PRIVILEGED='sudo|doas|run0|pkexec'
 CS_ARTIFACT_NAMES='node_modules|dist|build|__pycache__|.pytest_cache|.ruff_cache|.mypy_cache|.tox|.nox|.coverage|htmlcov|coverage|.next|.nuxt|.turbo|.parcel-cache|.svelte-kit|target|.eggs|.hypothesis'
 
-cs__rest=""; cs__w=""; cs__f=""; cs__in=false; cs__skip=false
+cs__rest=""; cs__w=""; cs__f=""; cs__in=false; cs__skip=false; cs__mk=false
+cs__depth=0; cs__origin=0; cs__base=0; cs__arith=false
 cs__heredoc=false; cs__hdmode=""; cs__quoted=false; cs__heredocs=()
 
 cs__flush() {
   if [[ "$cs__in" == true ]]; then
     if [[ "$cs__heredoc" == true ]]; then
       [[ "$cs__f" == *d* ]] && cs__quoted=true
-      cs__heredocs+=("$cs__hdmode|$cs__quoted|$cs__w")
+      cs__heredocs+=("$CS_NSEG|$cs__hdmode|$cs__quoted|$cs__w")
       cs__heredoc=false
     elif [[ "$cs__skip" == false ]]; then
+      # m: NAME=$(mktemp ...), a variable holding a path mktemp just created.
+      [[ "$cs__mk" == true && "$cs__w" =~ ^[A-Za-z_][A-Za-z0-9_]*=\$\(\.\.\.\)$ ]] && cs__f+=m
       CS_WORDS+=("$cs__w"); CS_FLAGS+=("$cs__f"); CS_SEG+=("$CS_NSEG")
     fi
     cs__skip=false
   fi
-  cs__w=""; cs__f=""; cs__in=false; cs__quoted=false
+  cs__w=""; cs__f=""; cs__in=false; cs__quoted=false; cs__mk=false
 }
 
 cs__segment_end() {
   cs__flush
   cs__skip=false; cs__heredoc=false
   CS_NSEG=$((CS_NSEG + 1))
+  CS_SEP[CS_NSEG]=$1; CS_DEPTH[CS_NSEG]=$cs__depth; CS_ORIGIN[CS_NSEG]=$cs__origin
 }
 
 # Consume the body of every here-document opened on the line just ended.
 cs__heredoc_bodies() {
-  local entry mode quoted delim line body
+  local entry seg mode quoted delim line body found
   (( ${#cs__heredocs[@]} > 0 )) || return 0
   for entry in "${cs__heredocs[@]}"; do
+    seg=${entry%%|*}; entry=${entry#*|}
     mode=${entry%%|*}; entry=${entry#*|}
     quoted=${entry%%|*}; delim=${entry#*|}
-    body=""
+    body=""; found=false
     while [[ -n "$cs__rest" ]]; do
       if [[ "$cs__rest" == *$'\n'* ]]; then
         line=${cs__rest%%$'\n'*}; cs__rest=${cs__rest#*$'\n'}
@@ -73,21 +90,59 @@ cs__heredoc_bodies() {
         line=$cs__rest; cs__rest=""
       fi
       [[ "$mode" == - ]] && line=${line#"${line%%[!$'\t']*}"}
-      [[ "$line" == "$delim" ]] && break
+      [[ "$line" == "$delim" ]] && { found=true; break; }
       body+=$line$'\n'
     done
+    # A delimiter that never comes, as after an arithmetic shift (( x << 2 )),
+    # would hide the rest of the command; fail closed instead.
+    [[ "$found" == true ]] || return 1
     # An unquoted delimiter still expands substitutions inside the body.
-    # shellcheck disable=SC2016  # Literal $( and backtick are being matched.
-    if [[ "$quoted" != true && ( "$body" == *'$('* || "$body" == *'`'* ) ]]; then
-      CS_PENDING+=("$body")
-    fi
+    if [[ "$quoted" != true ]]; then cs__body_substitutions "$body" "$seg" || return 1; fi
   done
   cs__heredocs=()
 }
 
+# Queue the $( ) and backtick substitutions of an unquoted here-document body.
+# Quotes and # are plain text there, so they cannot hide a substitution.
+cs__body_substitutions() {
+  local saved=$cs__rest saved_seg=$CS_NSEG c run='^[^\\$`]+'
+  # The body belongs to the segment that opened the here-document.
+  CS_NSEG=$2
+  cs__rest=$1
+  while [[ -n "$cs__rest" ]]; do
+    if [[ "$cs__rest" =~ $run ]]; then cs__rest=${cs__rest:${#BASH_REMATCH[0]}}; continue; fi
+    c=${cs__rest:0:1}; cs__rest=${cs__rest:1}
+    case "$c" in
+      \\) cs__rest=${cs__rest:1} ;;
+      '$') [[ "${cs__rest:0:1}" != '(' ]] || { cs__rest=${cs__rest:1}; cs__substitution; } ;;
+      '`') cs__backtick || { cs__rest=$saved; CS_NSEG=$saved_seg; return 1; } ;;
+    esac
+  done
+  cs__rest=$saved; CS_NSEG=$saved_seg
+}
+
+# cs__arith_body TEXT: true when TEXT, the inside of $( ), is "( ... )" with
+# the first parenthesis closing at the end, so $(( )) was arithmetic.
+cs__arith_body() {
+  local t=$1 i d=0
+  [[ "$t" == '('*')' ]] || return 1
+  for ((i = 0; i < ${#t}; i++)); do
+    case "${t:i:1}" in
+      '(') d=$((d + 1)) ;;
+      ')') d=$((d - 1)); (( d > 0 || i == ${#t} - 1 )) || return 1 ;;
+    esac
+  done
+}
+
 # After "$(" or "<(": collect the text up to the matching ")" for a later scan.
+# Here-document bodies are copied as text, so quotes or parentheses in them
+# cannot end the substitution early.
 cs__substitution() {
-  local depth=1 inner="" c run='^[^()'\''"\\]+' dq='^([^"\\]|\\.)*"'
+  local depth=1 inner="" c d line found arith=false run='^[^()'\''"\\<'$'\n'']+' dq='^([^"\\]|\\.)*"'
+  local opener='^<(-?)[[:space:]]*('\''[^'\'']*'\''|"[^"]*"|[^][:space:];&|()<>'\''"]+)'
+  local -a delims=()
+  # In $(( )) a << is a shift, not a here-document.
+  [[ "${cs__rest:0:1}" != '(' ]] || arith=true
   while [[ -n "$cs__rest" ]]; do
     if [[ "$cs__rest" =~ $run ]]; then
       inner+=${BASH_REMATCH[0]}; cs__rest=${cs__rest:${#BASH_REMATCH[0]}}
@@ -95,10 +150,51 @@ cs__substitution() {
     fi
     c=${cs__rest:0:1}; cs__rest=${cs__rest:1}
     case "$c" in
+      '<')
+        inner+=$c
+        if [[ "${cs__rest:0:2}" == '<<' ]]; then
+          # A here-string, <<<word, has no body.
+          inner+='<<'; cs__rest=${cs__rest:2}
+        elif [[ "$arith" == false && "$cs__rest" =~ $opener ]]; then
+          d=${BASH_REMATCH[2]}; d=${d//\'/}; d=${d//\"/}; d=${d//\\/}
+          delims+=("${BASH_REMATCH[1]}|$d")
+          inner+=${BASH_REMATCH[0]}; cs__rest=${cs__rest:${#BASH_REMATCH[0]}}
+        fi
+        ;;
+      $'\n')
+        inner+=$c
+        for d in ${delims[@]+"${delims[@]}"}; do
+          found=false
+          while [[ -n "$cs__rest" ]]; do
+            if [[ "$cs__rest" == *$'\n'* ]]; then
+              line=${cs__rest%%$'\n'*}; cs__rest=${cs__rest#*$'\n'}
+            else
+              line=$cs__rest; cs__rest=""
+            fi
+            inner+=$line$'\n'
+            [[ "${d%%|*}" == - ]] && line=${line#"${line%%[!$'\t']*}"}
+            [[ "$line" == "${d#*|}" ]] && { found=true; break; }
+          done
+          [[ "$found" == true ]] || CS__UNCLOSED=true
+        done
+        delims=()
+        ;;
       '(') depth=$((depth + 1)); inner+=$c ;;
       ')')
         depth=$((depth - 1))
-        if (( depth == 0 )); then CS_PENDING+=("$inner"); return 0; fi
+        if (( depth == 0 )); then
+          if [[ "$arith" == true && "$inner" == *[$'\n'\'\"\`#]* ]]; then
+            # Bash may read this as a subshell, where quotes, # and lines
+            # mean something else; ask rather than guess.
+            CS__UNCLOSED=true
+          elif [[ "$arith" == true ]] && ! cs__arith_body "$inner"; then
+            # Not arithmetic after all: a subshell whose << went unchecked.
+            arith=false
+            [[ "$inner" != *'<<'* ]] || CS__UNCLOSED=true
+          fi
+          CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=("$arith")
+          return 0
+        fi
         inner+=$c
         ;;
       "'")
@@ -118,7 +214,22 @@ cs__substitution() {
       \\) inner+="\\${cs__rest:0:1}"; cs__rest=${cs__rest:1} ;;
     esac
   done
-  CS_PENDING+=("$inner")
+  CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=("$arith")
+}
+
+# After a substitution: when the word so far is "NAME=" and the substitution
+# only runs mktemp (not -u, which creates nothing), the word is marked "m".
+cs__note_mktemp() {
+  local before=$1 inner=${CS_PENDING[${#CS_PENDING[@]}-1]} w
+  local -a words=()
+  [[ "$before" =~ ^[A-Za-z_][A-Za-z0-9_]*=$ ]] || return 0
+  [[ "$inner" =~ ^[[:space:]]*mktemp([[:space:]]+[A-Za-z0-9_./@%+,:=-]+)*[[:space:]]*$ ]] || return 0
+  read -ra words <<< "$inner"
+  for w in "${words[@]:1}"; do
+    # GNU accepts abbreviations of --dry-run, such as --dry.
+    [[ "$w" != --dr* && ! "$w" =~ ^-[A-Za-z]*u ]] || return 0
+  done
+  cs__mk=true
 }
 
 cs__backtick() {
@@ -126,7 +237,7 @@ cs__backtick() {
   local re='^([^`\\]|\\.)*`' match
   [[ "$cs__rest" =~ $re ]] || return 1
   match=${BASH_REMATCH[0]}
-  CS_PENDING+=("${match%?}")
+  CS_PENDING+=("${match%?}"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=(false)
   cs__rest=${cs__rest:${#match}}
 }
 
@@ -151,7 +262,8 @@ cs__double_quote() {
       '$')
         cs__f+=d
         if [[ "${cs__rest:0:1}" == '(' ]]; then
-          cs__rest=${cs__rest:1}; cs__substitution; cs__w+="\$(...)"
+          local before=$cs__w
+          cs__rest=${cs__rest:1}; cs__substitution; cs__note_mktemp "$before"; cs__w+="\$(...)"
         else
           cs__w+='$'
         fi
@@ -167,6 +279,15 @@ cs__redirect() {
   local first=$1
   if [[ "$first" == '<' ]]; then
     if [[ "${cs__rest:0:2}" == '<<' ]]; then cs__rest=${cs__rest:2}; cs__skip=true; return 0; fi
+    if [[ "${cs__rest:0:1}" == '<' && "$cs__arith" == true ]]; then
+      # A shift in the body of $(( )).
+      cs__rest=${cs__rest:1}; cs__skip=true; return 0
+    fi
+    if [[ "${cs__rest:0:1}" == '<' ]] && (( cs__depth > cs__base )); then
+      # Inside (( )) a << is a shift; inside ( ) it may be either. Either way
+      # a here-document guess could hide what follows, so ask.
+      CS__UNCLOSED=true
+    fi
     if [[ "${cs__rest:0:2}" == '<-' ]]; then
       cs__rest=${cs__rest:2}; cs__heredoc=true; cs__hdmode=-; return 0
     fi
@@ -181,9 +302,12 @@ cs__redirect() {
 }
 
 cs__scan_one() {
-  local c run='^[^][:space:];&|()<>'\''"\$`*?{}~#[]+'
-  cs__rest=$1; cs__w=""; cs__f=""; cs__in=false; cs__skip=false
+  local c before run='^[^][:space:];&|()<>'\''"\$`*?{}~#[]+'
+  cs__rest=$1; cs__w=""; cs__f=""; cs__in=false; cs__skip=false; cs__mk=false
   cs__heredoc=false; cs__quoted=false; cs__heredocs=()
+  cs__origin=$3; cs__arith=${4:-false}; if [[ "$2" == start ]]; then cs__depth=0; else cs__depth=1; fi
+  cs__base=$cs__depth
+  CS_SEP[CS_NSEG]=$2; CS_DEPTH[CS_NSEG]=$cs__depth; CS_ORIGIN[CS_NSEG]=$cs__origin
   while [[ -n "$cs__rest" ]]; do
     if [[ "$cs__rest" =~ $run ]]; then
       cs__w+=${BASH_REMATCH[0]}; cs__in=true; cs__rest=${cs__rest:${#BASH_REMATCH[0]}}
@@ -192,19 +316,24 @@ cs__scan_one() {
     c=${cs__rest:0:1}; cs__rest=${cs__rest:1}
     case "$c" in
       ' '|$'\t') cs__flush ;;
-      $'\n') cs__segment_end; cs__heredoc_bodies ;;
-      ';'|'('|')') cs__segment_end ;;
+      $'\n') cs__segment_end $'\n'; cs__heredoc_bodies || return 1 ;;
+      ';') cs__segment_end ';' ;;
+      '(') cs__depth=$((cs__depth + 1)); cs__segment_end paren ;;
+      ')') cs__depth=$((cs__depth - 1)); cs__segment_end paren ;;
       '&')
         if [[ "${cs__rest:0:1}" == '>' ]]; then
           cs__flush; cs__rest=${cs__rest:1}; cs__redirect '>'
+        elif [[ "${cs__rest:0:1}" == '&' ]]; then
+          cs__rest=${cs__rest:1}; cs__segment_end '&&'
         else
-          [[ "${cs__rest:0:1}" == '&' ]] && cs__rest=${cs__rest:1}
-          cs__segment_end
+          cs__segment_end '&'
         fi
         ;;
       '|')
-        [[ "${cs__rest:0:1}" == [\|\&] ]] && cs__rest=${cs__rest:1}
-        cs__segment_end
+        if [[ "${cs__rest:0:1}" == [\|\&] ]]; then
+          c+=${cs__rest:0:1}; cs__rest=${cs__rest:1}
+        fi
+        cs__segment_end "$c"
         ;;
       '<'|'>')
         if [[ "${cs__rest:0:1}" == '(' ]]; then
@@ -232,9 +361,10 @@ cs__scan_one() {
         fi
         ;;
       '$')
-        cs__in=true; cs__f+=d
+        cs__in=true; cs__f+='du'
         if [[ "${cs__rest:0:1}" == '(' ]]; then
-          cs__rest=${cs__rest:1}; cs__substitution; cs__w+="\$(...)"
+          before=$cs__w
+          cs__rest=${cs__rest:1}; cs__substitution; cs__note_mktemp "$before"; cs__w+="\$(...)"
         else
           cs__w+='$'
         fi
@@ -260,7 +390,7 @@ cs__scan_one() {
         ;;
     esac
   done
-  cs__segment_end
+  cs__segment_end end
   # A here-document on the last line has no body to skip.
   cs__heredocs=()
 }
@@ -269,11 +399,13 @@ cs__scan_one() {
 # unbalanced or substitutions nest too deeply; callers should then ask.
 cs_scan() {
   local k=0 i s LC_ALL=C
-  CS_WORDS=(); CS_FLAGS=(); CS_SEG=(); CS_START=(); CS_END=(); CS_NSEG=0
-  CS_PENDING=("$1")
+  CS_WORDS=(); CS_FLAGS=(); CS_SEG=(); CS_START=(); CS_END=(); CS_NSEG=0; CS_SEP=(); CS_DEPTH=(); CS_ORIGIN=()
+  CS_PENDING=("$1"); CS_PSEG=(-1); CS_PARITH=(false); CS__UNCLOSED=false
   while (( k < ${#CS_PENDING[@]} )); do
     (( k <= 64 )) || return 1
-    cs__scan_one "${CS_PENDING[k]}" || return 1
+    if (( k == 0 )); then s=start; else s=sub; fi
+    cs__scan_one "${CS_PENDING[k]}" "$s" "$k" "${CS_PARITH[k]}" || return 1
+    [[ "$CS__UNCLOSED" == false ]] || return 1
     k=$((k + 1))
   done
   for ((i = 0; i < ${#CS_WORDS[@]}; i++)); do
@@ -349,10 +481,176 @@ cs_has_word() {
 }
 
 cs_context() {
-  CS_CWD=""; CS_CWD_OK=false; CS_SID=""
-  if [[ "$1" == /* && -d "$1" ]]; then CS_CWD=$1; CS_CWD_OK=true; fi
+  CS_CWD=""; CS_CWD_OK=false; CS_SID=""; CS__CD_SEEN=false; CS__CD_SEG=-1
+  cs__state_scan
+  if [[ "$1" == /* && -d "$1" && "$CS__DIR_OK" == true ]]; then CS_CWD=$1; CS_CWD_OK=true; fi
   [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]] && CS_SID=$2
   CS__ROOTS_DONE=false; CS__TOP_DONE=false
+  return 0
+}
+
+# cs__seps_all FROM TO SEP...: true when every segment after FROM up to TO
+# was started by one of the given separators.
+cs__seps_all() {
+  local n from=$1 to=$2 sep ok
+  shift 2
+  for ((n = from + 1; n <= to; n++)); do
+    ok=false
+    for sep in "$@"; do [[ "${CS_SEP[n]:-}" == "$sep" ]] && ok=true; done
+    [[ "$ok" == true ]] || return 1
+  done
+}
+
+# cs__plain SEGMENT: true for a segment of the command itself at the top
+# level, not part of a pipeline or sent to the background.
+cs__plain() {
+  local next=${CS_SEP[$1 + 1]:-end}
+  [[ "${CS_ORIGIN[$1]:-1}" == 0 && "${CS_DEPTH[$1]:-1}" == 0 ]] || return 1
+  [[ "${CS_SEP[$1]}" != '|' && "${CS_SEP[$1]}" != '|&' ]] || return 1
+  [[ "$next" != '|' && "$next" != '|&' && "$next" != '&' ]]
+}
+
+# cs__simple FROM TO: true when no segment in the range opens or continues a
+# compound command (if, loops, case, braces), whose parts may not run.
+cs__simple() {
+  local n
+  for ((n = $1; n <= $2; n++)); do
+    [[ -n "${CS_START[n]+set}" ]] || continue
+    [[ ! "${CS_WORDS[CS_START[n]]}" =~ ^(if|then|else|elif|fi|do|done|while|until|for|case|esac|select|function|\{|\}|!)$ ]] || return 1
+  done
+}
+
+# cs__has_substitution SEGMENT: true when a substitution or here-document
+# body was found in the segment.
+cs__has_substitution() {
+  local k
+  for ((k = 1; k < ${#CS_PSEG[@]}; k++)); do [[ "${CS_PSEG[k]}" != "$1" ]] || return 0; done
+  return 1
+}
+
+# cs_cd SEGMENT: true when the segment is cd, pushd or popd; the caller skips
+# it. A cd that opens the command, at the top level, to a literal existing
+# directory sets the working directory for everything after it. Any other
+# directory change makes the working directory unknown.
+cs_cd() {
+  local seg=$1 j end w f operand="" option="" target first next
+  cs_invocation "$seg" 'cd|pushd|popd' || return 1
+  first=$(cs_segments | head -n 1)
+  next=${CS_SEP[seg + 1]:-end}
+  if [[ "$CS__CD_SEEN" == false && "$seg" == "$first" && "$CS_VIA" == direct && "${CS_WORDS[CS_I]}" == cd \
+        && "${CS_SEP[0]}" == start && ( "$next" == '&&' || "$next" == ';' || "$next" == $'\n' || "$next" == end ) \
+        && "$CS_I" == "${CS_START[seg]}" && "$CS__STATE_OK" == true ]] \
+      && cs__seps_all 0 "$seg" ';' $'\n' && cs__plain "$seg" && ! cs__has_substitution "$seg"; then
+    end=${CS_END[seg]}
+    for ((j = CS_I + 1; j < end; j++)); do
+      w=${CS_WORDS[j]}; f=${CS_FLAGS[j]}
+      if [[ -z "$operand" && -z "$option" && "$w" =~ ^-[LP]$ ]]; then option=$w; continue; fi
+      [[ -z "$operand" && "$w" == -- ]] && continue
+      [[ -z "$operand" ]] || { operand=""; break; }
+      # A leading ~ is the only expansion resolved here.
+      if [[ "$f" == d && ( "$w" == \~ || "$w" == \~/* ) && "$w" != *[\$\`]* ]]; then
+        w=$HOME${w#\~}; f=""
+      fi
+      [[ -z "$f" ]] || break
+      # Other relative names may be looked up through CDPATH.
+      [[ "$w" == /* || "$w" == . || "$w" == .. || "$w" == ./* || "$w" == ../* ]] || break
+      [[ "$w" == /* || "$CS_CWD_OK" == true ]] || break
+      operand=$w
+    done
+    if [[ -n "$operand" ]]; then
+      target=$(CDPATH='' builtin cd -- "${CS_CWD:-/}" 2>/dev/null && CDPATH='' builtin cd ${option:+"$option"} -- "$operand" 2>/dev/null && pwd) || target=""
+      if [[ "$target" == /* ]]; then
+        CS_CWD=$target; CS_CWD_OK=true; CS__CD_SEEN=true; CS__CD_SEG=$seg; CS__TOP_DONE=false
+        return 0
+      fi
+    fi
+  fi
+  CS__CD_SEEN=true; CS_CWD_OK=false
+  return 0
+}
+
+# cs__var_operand WORD FLAGS SEGMENT: true when an rm operand "$NAME",
+# "${NAME:?}" or either followed by /literal names a fresh mktemp path or a
+# disposable literal path. NAME must be set exactly once, by an
+# assignment-only segment at the top level that always runs before this one,
+# and appear nowhere else as a word (read, for, export, ...).
+cs__var_operand() {
+  local word=$1 flags=$2 seg=$3 name rest k a=-1 count=0 w sa value vflags guarded=false
+  [[ "$flags" != *g* && "$CS__STATE_OK" == true ]] || return 1
+  if [[ "$word" =~ ^\$\{([A-Za-z_][A-Za-z0-9_]*)(:\?[^}]*)?\}(.*)$ ]]; then
+    name=${BASH_REMATCH[1]}; rest=${BASH_REMATCH[3]}
+    [[ -z "${BASH_REMATCH[2]}" ]] || guarded=true
+  elif [[ "$word" =~ ^\$([A-Za-z_][A-Za-z0-9_]*)(.*)$ ]]; then
+    name=${BASH_REMATCH[1]}; rest=${BASH_REMATCH[2]}
+  else
+    return 1
+  fi
+  [[ -z "$rest" || "$rest" =~ ^(/[A-Za-z0-9._@+,=-]+)+/?$ ]] || return 1
+  [[ "$rest/" != */../* && "$rest/" != */./* ]] || return 1
+  for ((k = 0; k < ${#CS_WORDS[@]}; k++)); do
+    w=${CS_WORDS[k]}
+    if [[ "$w" == "$name" || "$w" == "$name"[=+[]* || "$w" == *"{$name="* || "$w" == *"{$name:="* ]]; then
+      count=$((count + 1)); a=$k
+    fi
+  done
+  (( count == 1 )) || return 1
+  w=${CS_WORDS[a]}; vflags=${CS_FLAGS[a]}; sa=${CS_SEG[a]}
+  [[ "$w" == "$name="* && "${CS_ORIGIN[seg]}" == 0 ]] && (( sa < seg )) || return 1
+  for ((k = CS_START[sa]; k < CS_END[sa]; k++)); do
+    [[ "${CS_WORDS[k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || return 1
+  done
+  cs__plain "$sa" && cs__simple 0 "$seg" || return 1
+  # The assignment runs whenever this segment does: it opens its list, follows
+  # only the cd that set the working directory, or is joined to it by &&.
+  [[ "${CS_SEP[sa]}" == start || "${CS_SEP[sa]}" == ';' || "${CS_SEP[sa]}" == $'\n' ]] \
+    || [[ "${CS_SEP[sa]}" == '&&' && "$CS__CD_SEG" == $((sa - 1)) ]] \
+    || cs__seps_all "$sa" "$seg" '&&' || return 1
+  value=${w#"$name="}
+  if [[ "$vflags" == *m* ]]; then
+    # TMPDIR may hold spaces; only a quoted expansion keeps the path whole.
+    [[ "$flags" != *u* ]] || return 1
+    # A failed mktemp leaves NAME empty; a suffix would then name /suffix
+    # unless ${NAME:?} stops the command first.
+    [[ -z "$rest" || "$guarded" == true ]] || cs__seps_all "$sa" "$seg" '&&'
+    return
+  fi
+  [[ -n "$value" && "$vflags" != *[dg]* && "$value" != *[[:space:]]* ]] || return 1
+  [[ "$flags" != *u* || "$CS__IFS" == false ]] || return 1
+  cs_path_disposable "$value$rest" "" || cs_path_artifact "$value$rest" ""
+}
+
+# cs__state_scan: set CS__DIR_OK unless some segment runs code the scanner
+# cannot see (eval, source, trap, a function definition, a dynamic program
+# name, ...), which may change the directory; set CS__STATE_OK when, in
+# addition, no builtin can rebind a variable without naming it (declare -n,
+# read, printf -v, ...). Functions and aliases from the user's environment
+# remain unseen.
+cs__state_scan() {
+  local seg i w fn_keyword='(^|[^A-Za-z0-9_])function[[:space:]]' fn_parens='[A-Za-z0-9_][[:space:]]*[(][)][[:space:]]*[{(]'
+  CS__DIR_OK=true; CS__STATE_OK=true; CS__IFS=false
+  for w in ${CS_WORDS[@]+"${CS_WORDS[@]}"}; do
+    [[ ! "$w" =~ ^IFS(\+?=|$) ]] || CS__IFS=true
+  done
+  # A function body runs wherever the function is called.
+  if [[ "${CS_PENDING[0]}" =~ $fn_keyword || "${CS_PENDING[0]}" =~ $fn_parens ]]; then
+    CS__DIR_OK=false
+  fi
+  for seg in $(cs_segments); do
+    i=${CS_START[seg]}
+    while (( i < CS_END[seg] )) && [[ "${CS_WORDS[i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*\+?= || "${CS_WORDS[i]}" =~ ^(\{|\}|!|if|then|else|elif|do|while|until)$ ]]; do
+      i=$((i + 1))
+    done
+    (( i < CS_END[seg] )) || continue
+    if [[ "${CS_FLAGS[i]}" == *d* ]] \
+        || cs_invocation "$seg" 'eval|source|\.|exec|builtin|command|trap|coproc|enable|alias|unalias|pushd|popd'; then
+      CS__DIR_OK=false
+    fi
+    if cs_invocation "$seg" 'declare|typeset|local|export|readonly|unset|read|mapfile|readarray|let|set|shopt|getopts|hash' \
+        || { cs_invocation "$seg" printf && cs_has_word "$seg" '-v.*'; }; then
+      CS__STATE_OK=false
+    fi
+  done
+  [[ "$CS__DIR_OK" == true ]] || CS__STATE_OK=false
   return 0
 }
 
@@ -532,7 +830,8 @@ cs_rm_safe() {
   [[ "$CS_VIA" != exec && "$CS_PRIV" == false ]] || return 1
   for j in "${operands[@]}"; do
     cs_path_disposable "${CS_WORDS[j]}" "${CS_FLAGS[j]}" \
-      || cs_path_artifact "${CS_WORDS[j]}" "${CS_FLAGS[j]}" || return 1
+      || cs_path_artifact "${CS_WORDS[j]}" "${CS_FLAGS[j]}" \
+      || cs__var_operand "${CS_WORDS[j]}" "${CS_FLAGS[j]}" "$seg" || return 1
   done
 }
 

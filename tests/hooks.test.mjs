@@ -12,7 +12,7 @@ function decision(hook, command, payload = {}, env = {}) {
   // These commands are input strings only; they are never executed.
   const result = spawnSync('/bin/bash', [resolve(hooks, hook + '.sh')], {
     input: JSON.stringify({ ...payload, tool_input: { command } }), encoding: 'utf8',
-    env: { ...process.env, CLAUDE_HOOK_DISPOSABLE_ROOTS: '', CLAUDE_HOOK_POSTGRES_DEV_TARGETS: '/nonexistent', ...env },
+    env: { ...process.env, CLAUDE_HOOK_DISPOSABLE_ROOTS: '', CLAUDE_HOOK_AUTO_DEFER: '', CLAUDE_HOOK_POSTGRES_DEV_TARGETS: '/nonexistent', ...env },
   });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim() ? JSON.parse(result.stdout).hookSpecificOutput.permissionDecision : undefined;
@@ -171,6 +171,9 @@ test('configured disposable roots are honored but shared roots are not', t => {
 test('ignored build output in the work tree can be removed', t => {
   const { repo, run } = fixture(t);
   assert.equal(run('block-dangerous', 'rm -rf dist node_modules'), undefined);
+  // source and eval may change the directory the command started in.
+  assert.equal(run('block-dangerous', '. ./env.sh && rm -rf dist'), 'ask');
+  assert.equal(run('block-dangerous', 'export X=1 && rm -rf dist'), undefined);
   assert.equal(run('block-dangerous', 'rm -f src/__pycache__/*.pyc'), undefined);
   assert.equal(run('block-dangerous', "find . -name '*.pyc' -delete"), 'ask');
   assert.equal(run('block-dangerous', "find . -name '*.log' -delete"), 'ask');
@@ -220,6 +223,144 @@ test('git push passes for feature branches and asks for protected or forced push
   assert.equal(run('confirm-external-impact', 'git push'), 'ask');
   git(repo, 'config', 'push.default', 'matching');
   assert.equal(run('confirm-external-impact', 'git push origin feature/example'), 'ask');
+});
+
+test('a leading cd to an existing directory sets the working directory', t => {
+  const { base, repo, scratch, run } = fixture(t);
+  const elsewhere = { cwd: base };
+  for (const command of [`cd ${repo} && git push -u origin feature/example`, `cd ${repo}; git push origin HEAD`]) {
+    assert.equal(run('confirm-external-impact', command, elsewhere), undefined, command);
+  }
+  assert.equal(run('confirm-external-impact', 'cd .. && git push origin feature/example', { cwd: join(repo, 'src') }), undefined);
+  assert.equal(run('confirm-external-impact', 'cd ~/repo && git push origin feature/example', { cwd: base, env: { HOME: base } }), undefined);
+  assert.equal(run('confirm-external-impact', 'cd ~other/repo && git push origin feature/example', { cwd: base, env: { HOME: base } }), 'ask');
+  assert.equal(run('block-dangerous', `cd ${scratch} && rm -rf build out.log`), undefined);
+  assert.equal(run('block-dangerous', `cd ${scratch}/missing && rm -rf build`), 'ask');
+  for (const command of [
+    `cd ${repo} && git push origin main`,
+    `(cd ${repo}); git push origin feature/example`,
+    `true || cd ${repo}; git push origin feature/example`,
+    `echo start && cd ${repo} && git push origin feature/example`,
+    `cd ${repo} || exit; git push origin feature/example`,
+    `cd ${repo} | cat; git push origin feature/example`,
+    `cd ${repo} && cd ${base} && git push origin feature/example`,
+    `cd "$HOME" && git push origin feature/example`,
+    'cd - && git push origin feature/example',
+  ]) {
+    assert.equal(run('confirm-external-impact', command, elsewhere), 'ask', command);
+  }
+  assert.equal(run('confirm-external-impact', `cd ${repo} && git fetch -q | cat; git push origin feature/example`, elsewhere), undefined);
+  assert.equal(run('confirm-external-impact', `cd ${repo} && . ./env.sh && git push origin feature/example`, elsewhere), 'ask');
+  assert.equal(run('confirm-external-impact', `HOME=/ cd ~/repo && git push origin feature/example`, { cwd: base, env: { HOME: base } }), 'ask');
+  // A substitution in the cd itself runs before the cd, in the old directory.
+  assert.equal(run('block-dangerous', `cd ${scratch} 2>"$(rm -rf build)"`), 'ask');
+  assert.equal(run('block-dangerous', `cd ${scratch} <<EOF\n$(rm -rf build)\nEOF`), 'ask');
+  assert.equal(run('block-dangerous', `cd ${scratch} <<EOF; true\n$(rm -rf build)\nEOF`), 'ask');
+  for (const command of [`cd ${scratch} | true; rm -rf build`, `cd ${base} && rm -rf repo`, `(cd ${scratch}) && rm -rf dist`, `cd ${scratch} & rm -rf build`]) {
+    assert.equal(run('block-dangerous', command), 'ask', command);
+  }
+});
+
+test('rm resolves variables assigned from mktemp or a disposable literal', t => {
+  const { scratch, run } = fixture(t);
+  for (const command of [
+    'S=$(mktemp -d) && rm -rf "$S"',
+    'S="$(mktemp -d)"; echo work; rm -rf "$S"',
+    'S=$(mktemp -d -p /tmp example.XXXXXX) && touch "$S/a" && rm -rf "$S/a" "${S}"',
+    `S=${scratch}/run; mkdir -p "$S"; rm -rf "$S" $S/out`,
+    'S=$(mktemp -d)\necho "$(cat <<<x\necho y)"\nrm -rf "$S"',
+    // ${S:?} stops the command when S is empty, so a suffix cannot become /suffix.
+    'S=$(mktemp -d); rm -rf "${S:?}" "${S:?}/data"',
+    // A pipeline or a tracked cd before the rm does not hide the assignment.
+    'S=$(mktemp -d) && echo "$S" | cat; rm -rf "${S:?}"',
+    `cd ${scratch} && S=$(mktemp -d) && ls "$S" | cat; rm -rf "\${S:?}/a"`,
+  ]) {
+    assert.equal(run('block-dangerous', command), undefined, command);
+  }
+  for (const command of [
+    'rm -rf "$UNKNOWN"',
+    'S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); export S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); read -r S; rm -rf "$S"',
+    'S=$(mktemp -d); for S in /etc; do rm -rf "$S"; done',
+    'S=$(mktemp -d); eval S=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); S[0]=/etc; rm -rf "$S"',
+    'S=$(mktemp -u); rm -rf "$S"',
+    'S=$(mktemp -d); rm -rf "$S/.."',
+    'S=$(mktemp -d); rm -rf "$S/x"',
+    'S=$(mktemp -d) /bin/true; rm -rf "$S"',
+    'false && S=$(mktemp -d); rm -rf "$S"',
+    'S=$(mktemp -d) || S=/etc; rm -rf "$S"',
+    '(S=$(mktemp -d)); rm -rf "$S"',
+    'S=$(mktemp -d) && rm -rf "$S"/*',
+    'S=$(mktemp -d) && rm -rf "$S$T"',
+    `S="${scratch}/a b"; rm -rf $S`,
+    'S=$(mktemp -d); rm -rf "${S:-/etc}"',
+    'S=$(mktemp -d); rm -rf ${S:?}/*',
+    // Builtins can rebind a variable without naming it as a word.
+    'S=$(mktemp -d); declare -n R=S; R=/etc; rm -rf "$S"',
+    'S=$(mktemp -d); eval "$X"; rm -rf "$S"',
+    'S=$(mktemp -d); . ./env.sh; rm -rf "$S"',
+    'S=$(mktemp -d); N=S; printf -v "$N" /etc; rm -rf "$S"',
+    // Unquoted expansions are split on IFS.
+    'S=$(mktemp -d); rm -rf $S',
+    `S=${scratch}/run; IFS=/; rm -rf $S/out`,
+    'S=$(mktemp --dry -d); rm -rf "$S"',
+    'S=$(mktemp -d); trap \'S=/etc\' DEBUG; rm -rf "$S"',
+    'if $X; then :; fi; S=$(mktemp -d); rm -rf "$S"',
+    'S=$(mktemp -d); g() { :; }; g; rm -rf "$S"',
+    'echo "$(rm -rf "$S")"; S=$(mktemp -d)',
+    `if false\nthen\nS=${scratch}/x\nfi\nrm -rf "$S/y"`,
+    'echo | S=$(mktemp -d) && rm -rf "$S/a"',
+    'S=$(mktemp -d) & rm -rf "$S"',
+    'true && S=$(mktemp -d); rm -rf "$S/a"',
+  ]) {
+    assert.equal(run('block-dangerous', command), 'ask', command);
+  }
+});
+
+test('a here-document inside a command substitution is skipped as text', t => {
+  const { run } = fixture(t);
+  const body = "--body \"$(cat <<'EOF'\nIt doesn't parse (yet); see `notes`.\nEOF\n)\"";
+  assert.equal(run('confirm-external-impact', `gh issue create --title example ${body}`), undefined);
+  assert.equal(run('block-dangerous', `git commit -q -m example ${body}`), undefined);
+  // An unquoted delimiter still expands substitutions in the body.
+  assert.equal(run('block-dangerous', 'echo "$(cat <<EOF\n$(rm -rf /)\nEOF\n)"'), 'ask');
+  assert.equal(run('confirm-external-impact', `gh pr create --title example ${body}`), 'ask');
+  // << in arithmetic is a shift, and a delimiter that never comes cannot hide the rest.
+  assert.equal(run('block-dangerous', 'x=$((1 << 2\n))\nrm -rf /'), 'ask');
+  assert.equal(run('block-dangerous', '((x = 1 << 2\n))\nrm -rf /'), 'ask');
+  assert.equal(run('block-dangerous', 'cat <<EOF\nrm -rf /'), 'ask');
+  assert.equal(run('block-dangerous', '((x = 1 << EOF))\nrm -rf /\nEOF'), 'ask');
+  assert.equal(run('block-dangerous', 'echo "$((1 << EOF\n$(rm -rf /)\nEOF\n))"'), 'ask');
+  assert.equal(run('block-dangerous', 'echo $((1 << EOF)) && echo done'), undefined);
+  // An unquoted here-document body runs $( ) even inside quotes or after #.
+  const { repo: tree, run: inTree } = fixture(t);
+  assert.ok(tree);
+  assert.equal(inTree('block-dangerous', "cat <<EOF\n'$(rm -rf src)'\nEOF"), 'ask');
+  assert.equal(inTree('block-dangerous', 'cat <<EOF\n# $(rm -rf src)\nEOF'), 'ask');
+  assert.equal(inTree('block-dangerous', "cat <<EOF\nit's $(date)\nEOF"), undefined);
+  // $(( that is not arithmetic is a command substitution with a subshell.
+  assert.equal(run('block-dangerous', '$((cat <<EOF\nx\nEOF\n) )'), 'ask');
+  assert.equal(inTree('block-dangerous', '$((cat <<EOF\n# $(rm -rf src)\nEOF\n))'), 'ask');
+  assert.equal(run('block-dangerous', 'echo $((1 << 2)) "$(cat <<<x)"'), undefined);
+});
+
+test('auto mode defers only the opted-in confirmations to the classifier', t => {
+  const { repo } = fixture(t);
+  const defer = { CLAUDE_HOOK_AUTO_DEFER: 'pr-create,pr-merge,push-protected', TMPDIR: '/nonexistent' };
+  const run = (command, mode, env) => decision('confirm-external-impact', command, { cwd: repo, session_id: 'session-1', permission_mode: mode }, env);
+  for (const command of ['gh pr create --title example --body example', 'gh pr merge 1 --merge', 'git push origin main', 'git push origin feature/example:main']) {
+    assert.equal(run(command, 'auto', defer), undefined, command);
+    assert.equal(run(command, 'default', defer), 'ask', command);
+    assert.equal(run(command, 'auto', {}), 'ask', command);
+  }
+  for (const command of ['gh release create v1', 'git push --force origin main', 'git push origin --delete feature/example', 'git push --tags', 'git push origin "$branch"']) {
+    assert.equal(run(command, 'auto', defer), 'ask', command);
+  }
+  assert.equal(run('gh pr merge 1', 'auto', { CLAUDE_HOOK_AUTO_DEFER: 'pr-create' }), 'ask');
+  assert.equal(run('gh pr merge 1 --subject "gh pr create"', 'auto', { CLAUDE_HOOK_AUTO_DEFER: 'pr-create' }), 'ask');
 });
 
 test('allowlisted development databases may be changed', t => {
