@@ -14,6 +14,9 @@ All notable changes to this project are documented in this file.
   at the top level, before the `rm`, from `mktemp` or a disposable literal
   path. A here-document inside `$( )` no longer makes the command
   unparseable.
+- Claude hooks: `CLAUDE_HOOK_AUTO_DEFER` (`pr-create`, `pr-merge`,
+  `push-protected`) leaves those confirmations to the auto mode classifier when
+  the session is in auto mode. Unset by default; other modes always ask.
 - AGENTS.md: take commit SHAs, image digests and run IDs from the command that
   produces them, never retype them.
 - AGENTS.md: wait on CI by run ID and report outlier jobs; keep the full

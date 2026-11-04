@@ -24,6 +24,7 @@ command=$(printf '%s' "$input" | jq -er '.tool_input.command // empty') \
   || ask "Could not inspect the Bash command."
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
 session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
+permission_mode=$(printf '%s' "$input" | jq -r '.permission_mode // empty')
 
 hook_path=$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null) || hook_path=${BASH_SOURCE[0]}
 # shellcheck source-path=SCRIPTDIR source=command-scan.sh
@@ -33,6 +34,13 @@ cs_scan "$command" || ask "Could not split the Bash command into simple commands
 cs_context "$cwd" "$session_id"
 
 impact="Command can publish, deploy, or change remote infrastructure; confirm scope and target."
+
+# In auto mode, CLAUDE_HOOK_AUTO_DEFER (comma-separated: pr-create, pr-merge,
+# push-protected) names confirmations left to the auto mode classifier instead
+# of a prompt. Unset, every confirmation asks in every mode.
+deferred() {
+  [[ "$permission_mode" == auto && ",${CLAUDE_HOOK_AUTO_DEFER:-}," == *",$1,"* ]]
+}
 global_flags='([[:space:]]+-[^[:space:]]+([[:space:]]+[^[:space:]-][^[:space:]]*)?)*'
 # Branches that a push must never reach without confirmation, in addition to
 # the remote's default branch.
@@ -43,9 +51,10 @@ git_in() {
 }
 
 # A plain push of a feature branch passes; force, delete, mirror, tag and
-# default-branch pushes, and anything that cannot be resolved, ask.
+# default-branch pushes, and anything that cannot be resolved, ask. Returns 2
+# when the only concern is a protected or default destination branch.
 git_push_safe() {
-  local segment=$1 j end w remote="" current default destination
+  local segment=$1 j end w remote="" current default destination protected=false
   local -a refspecs=()
   end=${CS_END[segment]}
   [[ "$CS_VIA" == direct && "$CS_CWD_OK" == true ]] || return 1
@@ -101,9 +110,10 @@ git_push_safe() {
     [[ "$destination" != HEAD ]] || destination=$current
     destination=${destination#refs/heads/}
     [[ "$destination" != refs/* ]] || return 1
-    [[ ! "$destination" =~ ^($protected_branches)$ ]] || return 1
-    [[ -z "$default" || "$destination" != "$default" ]] || return 1
+    [[ ! "$destination" =~ ^($protected_branches)$ ]] || protected=true
+    [[ -z "$default" || "$destination" != "$default" ]] || protected=true
   done
+  [[ "$protected" == false ]] || return 2
 }
 
 aws_safe() {
@@ -148,12 +158,21 @@ for segment in $(cs_segments); do
   if cs_invocation "$segment" git; then
     cs_text "$segment"
     if [[ "$CS_TEXT" =~ ^git${global_flags}[[:space:]]+push([[:space:]]|$) ]]; then
-      git_push_safe "$segment" || ask "Git push targets a protected or unresolved branch, or rewrites history; confirm scope and target."
+      push_rc=0
+      git_push_safe "$segment" || push_rc=$?
+      if (( push_rc == 1 )) || { (( push_rc == 2 )) && ! deferred push-protected; }; then
+        ask "Git push targets a protected or unresolved branch, or rewrites history; confirm scope and target."
+      fi
     fi
   fi
   if cs_invocation "$segment" gh; then
     cs_text "$segment"
-    [[ ! "$CS_TEXT" =~ ^gh${global_flags}[[:space:]]+(pr[[:space:]]+(merge|create)|release[[:space:]]+create) ]] || ask "$impact"
+    if [[ "$CS_TEXT" =~ ^gh${global_flags}[[:space:]]+pr[[:space:]]+(merge|create)([[:space:]]|$) ]]; then
+      pr_action=merge
+      [[ "$CS_TEXT" =~ ^gh${global_flags}[[:space:]]+pr[[:space:]]+create([[:space:]]|$) ]] && pr_action=create
+      deferred "pr-$pr_action" || ask "$impact"
+    fi
+    [[ ! "$CS_TEXT" =~ ^gh${global_flags}[[:space:]]+release[[:space:]]+create ]] || ask "$impact"
   fi
   if cs_invocation "$segment" 'npm|pnpm|yarn|bun|twine|poetry|docker|podman'; then
     cs_text "$segment"

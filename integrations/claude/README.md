@@ -43,12 +43,26 @@ The guards cover known command patterns with the following quiet paths:
   directory that still holds tracked files. `find -delete` outside owned scratch
   asks even for artifact-like names: a predicate does not prove ownership.
   `sudo`, `xargs`, `find -exec rm`,
-  `docker exec`, `ssh`, `..`, and unresolved paths always ask.
+  `docker exec`, `ssh`, `..`, and unresolved paths always ask. An operand
+  `"$NAME"`, `"${NAME:?}"` or `"$NAME/literal"` resolves when NAME is set once,
+  at the top level, before the `rm`, from `$(mktemp ...)` or a disposable
+  literal path; a suffix after a mktemp variable needs `&&` or `${NAME:?}`.
+  Unquoted expansions resolve only for literal paths in commands that leave
+  `IFS` alone.
+- A `cd` that opens the command, at the top level, to a literal existing
+  directory (absolute, `./`, `../` or `~/`) sets the working directory for the
+  rest of it. Any other `cd`, `pushd` or `popd`, and any command that uses
+  `eval`, `source`, `declare`, `export`, `read`, `printf -v` or a dynamic
+  program name, leaves the directory and variables unresolved.
 - `git push` of a non-protected branch passes. Force pushes (including
   `--force-with-lease` and `+refspec`), deletions, tags, mirrors, pushes to
   `main`, `master`, `trunk`, `develop`, `production`, `prod`, `release*`, or the
   remote's default branch, custom push mappings, `-c`/`--config-env` overrides,
-  and pushes after a `cd` ask.
+  and pushes whose directory is unresolved ask.
+- In auto mode (`permission_mode: "auto"`), `CLAUDE_HOOK_AUTO_DEFER` names
+  confirmations to leave to the auto mode classifier: `pr-create`, `pr-merge`,
+  and `push-protected` (a plain push whose only concern is a protected or
+  default branch). It is unset by default, and other modes always ask.
 - `docker rm` of a local container passes; removing volumes, pruning, or a
   remote daemon (`-H`, `--context`, `DOCKER_HOST`) asks.
 - `sqlite3` on an in-memory database, a session file, or a file in the work

@@ -322,6 +322,22 @@ test('a here-document inside a command substitution is skipped as text', t => {
   assert.equal(run('confirm-external-impact', `gh pr create --title example ${body}`), 'ask');
 });
 
+test('auto mode defers only the opted-in confirmations to the classifier', t => {
+  const { repo } = fixture(t);
+  const defer = { CLAUDE_HOOK_AUTO_DEFER: 'pr-create,pr-merge,push-protected', TMPDIR: '/nonexistent' };
+  const run = (command, mode, env) => decision('confirm-external-impact', command, { cwd: repo, session_id: 'session-1', permission_mode: mode }, env);
+  for (const command of ['gh pr create --title example --body example', 'gh pr merge 1 --merge', 'git push origin main', 'git push origin feature/example:main']) {
+    assert.equal(run(command, 'auto', defer), undefined, command);
+    assert.equal(run(command, 'default', defer), 'ask', command);
+    assert.equal(run(command, 'auto', {}), 'ask', command);
+  }
+  for (const command of ['gh release create v1', 'git push --force origin main', 'git push origin --delete feature/example', 'git push --tags', 'git push origin "$branch"']) {
+    assert.equal(run(command, 'auto', defer), 'ask', command);
+  }
+  assert.equal(run('gh pr merge 1', 'auto', { CLAUDE_HOOK_AUTO_DEFER: 'pr-create' }), 'ask');
+  assert.equal(run('gh pr merge 1 --subject "gh pr create"', 'auto', { CLAUDE_HOOK_AUTO_DEFER: 'pr-create' }), 'ask');
+});
+
 test('allowlisted development databases may be changed', t => {
   const { run } = fixture(t);
   for (const command of [
