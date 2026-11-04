@@ -531,7 +531,9 @@ cs__has_substitution() {
 # cs_cd SEGMENT: true when the segment is cd, pushd or popd; the caller skips
 # it. A cd that opens the command, at the top level, to a literal existing
 # directory sets the working directory for everything after it. Any other
-# directory change makes the working directory unknown.
+# directory change makes the working directory unknown. Builtins that only
+# rebind variables (set, declare, read, ...) cannot move it, so only code the
+# scanner cannot see (CS__DIR_OK) does.
 cs_cd() {
   local seg=$1 j end w f operand="" option="" target first next
   cs_invocation "$seg" 'cd|pushd|popd' || return 1
@@ -539,7 +541,7 @@ cs_cd() {
   next=${CS_SEP[seg + 1]:-end}
   if [[ "$CS__CD_SEEN" == false && "$seg" == "$first" && "$CS_VIA" == direct && "${CS_WORDS[CS_I]}" == cd \
         && "${CS_SEP[0]}" == start && ( "$next" == '&&' || "$next" == ';' || "$next" == $'\n' || "$next" == end ) \
-        && "$CS_I" == "${CS_START[seg]}" && "$CS__STATE_OK" == true ]] \
+        && "$CS_I" == "${CS_START[seg]}" && "$CS__DIR_OK" == true ]] \
       && cs__seps_all 0 "$seg" ';' $'\n' && cs__plain "$seg" && ! cs__has_substitution "$seg"; then
     end=${CS_END[seg]}
     for ((j = CS_I + 1; j < end; j++)); do
