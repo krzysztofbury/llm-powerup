@@ -12,7 +12,7 @@ function decision(hook, command, payload = {}, env = {}) {
   // These commands are input strings only; they are never executed.
   const result = spawnSync('/bin/bash', [resolve(hooks, hook + '.sh')], {
     input: JSON.stringify({ ...payload, tool_input: { command } }), encoding: 'utf8',
-    env: { ...process.env, CLAUDE_HOOK_DISPOSABLE_ROOTS: '', CLAUDE_HOOK_POSTGRES_DEV_TARGETS: '/nonexistent', ...env },
+    env: { ...process.env, CLAUDE_HOOK_DISPOSABLE_ROOTS: '', CLAUDE_HOOK_AUTO_DEFER: '', CLAUDE_HOOK_POSTGRES_DEV_TARGETS: '/nonexistent', ...env },
   });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim() ? JSON.parse(result.stdout).hookSpecificOutput.permissionDecision : undefined;
@@ -171,6 +171,9 @@ test('configured disposable roots are honored but shared roots are not', t => {
 test('ignored build output in the work tree can be removed', t => {
   const { repo, run } = fixture(t);
   assert.equal(run('block-dangerous', 'rm -rf dist node_modules'), undefined);
+  // source and eval may change the directory the command started in.
+  assert.equal(run('block-dangerous', '. ./env.sh && rm -rf dist'), 'ask');
+  assert.equal(run('block-dangerous', 'export X=1 && rm -rf dist'), undefined);
   assert.equal(run('block-dangerous', 'rm -f src/__pycache__/*.pyc'), undefined);
   assert.equal(run('block-dangerous', "find . -name '*.pyc' -delete"), 'ask');
   assert.equal(run('block-dangerous', "find . -name '*.log' -delete"), 'ask');
@@ -302,6 +305,9 @@ test('rm resolves variables assigned from mktemp or a disposable literal', t => 
     'S=$(mktemp -d); rm -rf $S',
     `S=${scratch}/run; IFS=/; rm -rf $S/out`,
     'S=$(mktemp --dry -d); rm -rf "$S"',
+    'S=$(mktemp -d); trap \'S=/etc\' DEBUG; rm -rf "$S"',
+    'if $X; then :; fi; S=$(mktemp -d); rm -rf "$S"',
+    'S=$(mktemp -d); g() { :; }; g; rm -rf "$S"',
     'echo "$(rm -rf "$S")"; S=$(mktemp -d)',
     `if false\nthen\nS=${scratch}/x\nfi\nrm -rf "$S/y"`,
     'echo | S=$(mktemp -d) && rm -rf "$S/a"',

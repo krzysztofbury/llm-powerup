@@ -51,9 +51,11 @@ The guards cover known command patterns with the following quiet paths:
   `IFS` alone.
 - A `cd` that opens the command, at the top level, to a literal existing
   directory (absolute, `./`, `../` or `~/`) sets the working directory for the
-  rest of it. Any other `cd`, `pushd` or `popd`, and any command that uses
-  `eval`, `source`, `declare`, `export`, `read`, `printf -v` or a dynamic
-  program name, leaves the directory and variables unresolved.
+  rest of it. Any other `cd`, `pushd` or `popd` leaves it unresolved. A command
+  that uses `eval`, `source`, `trap`, `exec`, a function definition or a
+  dynamic program name leaves the directory unresolved, including the one it
+  started in; `declare`, `export`, `read` or `printf -v` leave variables
+  unresolved.
 - `git push` of a non-protected branch passes. Force pushes (including
   `--force-with-lease` and `+refspec`), deletions, tags, mirrors, pushes to
   `main`, `master`, `trunk`, `develop`, `production`, `prod`, `release*`, or the

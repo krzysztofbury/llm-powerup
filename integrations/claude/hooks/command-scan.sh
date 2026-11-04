@@ -32,6 +32,7 @@ CS_CWD_OK=false   # false when the working directory is unknown or a cd was seen
 CS__CD_SEEN=false
 CS__CD_SEG=-1     # the segment of the cd that set CS_CWD, if any
 CS__STATE_OK=false # no builtin in the command can change variables or the directory unseen
+CS__DIR_OK=false  # no builtin in the command can change the directory unseen
 CS__IFS=false     # the command sets or reads IFS as a word
 CS_SID=""
 CS_ROOTS=()       # physical disposable roots
@@ -420,7 +421,7 @@ cs_has_word() {
 cs_context() {
   CS_CWD=""; CS_CWD_OK=false; CS_SID=""; CS__CD_SEEN=false; CS__CD_SEG=-1
   cs__state_scan
-  if [[ "$1" == /* && -d "$1" ]]; then CS_CWD=$1; CS_CWD_OK=true; fi
+  if [[ "$1" == /* && -d "$1" && "$CS__DIR_OK" == true ]]; then CS_CWD=$1; CS_CWD_OK=true; fi
   [[ "$2" =~ ^[A-Za-z0-9_-]+$ ]] && CS_SID=$2
   CS__ROOTS_DONE=false; CS__TOP_DONE=false
   return 0
@@ -556,26 +557,38 @@ cs__var_operand() {
   cs_path_disposable "$value$rest" "" || cs_path_artifact "$value$rest" ""
 }
 
-# cs__state_scan: set CS__STATE_OK unless some segment runs a builtin that can
-# rebind a variable or change the directory without naming it (eval, source,
-# declare -n, printf -v, ...) or a program whose name is dynamic. Shell
-# functions and aliases from the user's environment remain unseen.
+# cs__state_scan: set CS__DIR_OK unless some segment runs code the scanner
+# cannot see (eval, source, trap, a function definition, a dynamic program
+# name, ...), which may change the directory; set CS__STATE_OK when, in
+# addition, no builtin can rebind a variable without naming it (declare -n,
+# read, printf -v, ...). Functions and aliases from the user's environment
+# remain unseen.
 cs__state_scan() {
-  local seg i w
-  CS__STATE_OK=true; CS__IFS=false
+  local seg i w fn_keyword='(^|[^A-Za-z0-9_])function[[:space:]]' fn_parens='[A-Za-z0-9_][[:space:]]*[(][)][[:space:]]*[{(]'
+  CS__DIR_OK=true; CS__STATE_OK=true; CS__IFS=false
   for w in ${CS_WORDS[@]+"${CS_WORDS[@]}"}; do
     [[ ! "$w" =~ ^IFS(\+?=|$) ]] || CS__IFS=true
   done
+  # A function body runs wherever the function is called.
+  if [[ "${CS_PENDING[0]}" =~ $fn_keyword || "${CS_PENDING[0]}" =~ $fn_parens ]]; then
+    CS__DIR_OK=false
+  fi
   for seg in $(cs_segments); do
     i=${CS_START[seg]}
-    while (( i < CS_END[seg] )) && [[ "${CS_WORDS[i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*\+?= ]]; do i=$((i + 1)); done
+    while (( i < CS_END[seg] )) && [[ "${CS_WORDS[i]}" =~ ^[A-Za-z_][A-Za-z0-9_]*\+?= || "${CS_WORDS[i]}" =~ ^(\{|\}|!|if|then|else|elif|do|while|until)$ ]]; do
+      i=$((i + 1))
+    done
     (( i < CS_END[seg] )) || continue
-    if [[ "${CS_FLAGS[i]}" == *d* ]]; then CS__STATE_OK=false; return 0; fi
-    if cs_invocation "$seg" 'eval|source|\.|declare|typeset|local|export|readonly|unset|read|mapfile|readarray|let|set|shopt|alias|unalias|enable|exec|builtin|getopts|hash|pushd|popd'; then
-      CS__STATE_OK=false; return 0
+    if [[ "${CS_FLAGS[i]}" == *d* ]] \
+        || cs_invocation "$seg" 'eval|source|\.|exec|builtin|command|trap|coproc|enable|alias|unalias|pushd|popd'; then
+      CS__DIR_OK=false
     fi
-    if cs_invocation "$seg" printf && cs_has_word "$seg" '-v.*'; then CS__STATE_OK=false; return 0; fi
+    if cs_invocation "$seg" 'declare|typeset|local|export|readonly|unset|read|mapfile|readarray|let|set|shopt|getopts|hash' \
+        || { cs_invocation "$seg" printf && cs_has_word "$seg" '-v.*'; }; then
+      CS__STATE_OK=false
+    fi
   done
+  [[ "$CS__DIR_OK" == true ]] || CS__STATE_OK=false
   return 0
 }
 
