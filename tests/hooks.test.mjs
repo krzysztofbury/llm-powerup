@@ -255,6 +255,7 @@ test('a leading cd to an existing directory sets the working directory', t => {
   // A substitution in the cd itself runs before the cd, in the old directory.
   assert.equal(run('block-dangerous', `cd ${scratch} 2>"$(rm -rf build)"`), 'ask');
   assert.equal(run('block-dangerous', `cd ${scratch} <<EOF\n$(rm -rf build)\nEOF`), 'ask');
+  assert.equal(run('block-dangerous', `cd ${scratch} <<EOF; true\n$(rm -rf build)\nEOF`), 'ask');
   for (const command of [`cd ${scratch} | true; rm -rf build`, `cd ${base} && rm -rf repo`, `(cd ${scratch}) && rm -rf dist`, `cd ${scratch} & rm -rf build`]) {
     assert.equal(run('block-dangerous', command), 'ask', command);
   }

@@ -55,7 +55,7 @@ cs__flush() {
   if [[ "$cs__in" == true ]]; then
     if [[ "$cs__heredoc" == true ]]; then
       [[ "$cs__f" == *d* ]] && cs__quoted=true
-      cs__heredocs+=("$cs__hdmode|$cs__quoted|$cs__w")
+      cs__heredocs+=("$CS_NSEG|$cs__hdmode|$cs__quoted|$cs__w")
       cs__heredoc=false
     elif [[ "$cs__skip" == false ]]; then
       # m: NAME=$(mktemp ...), a variable holding a path mktemp just created.
@@ -76,9 +76,10 @@ cs__segment_end() {
 
 # Consume the body of every here-document opened on the line just ended.
 cs__heredoc_bodies() {
-  local entry mode quoted delim line body found
+  local entry seg mode quoted delim line body found
   (( ${#cs__heredocs[@]} > 0 )) || return 0
   for entry in "${cs__heredocs[@]}"; do
+    seg=${entry%%|*}; entry=${entry#*|}
     mode=${entry%%|*}; entry=${entry#*|}
     quoted=${entry%%|*}; delim=${entry#*|}
     body=""; found=false
@@ -96,7 +97,7 @@ cs__heredoc_bodies() {
     # would hide the rest of the command; fail closed instead.
     [[ "$found" == true ]] || return 1
     # An unquoted delimiter still expands substitutions inside the body.
-    if [[ "$quoted" != true ]]; then cs__body_substitutions "$body" || return 1; fi
+    if [[ "$quoted" != true ]]; then cs__body_substitutions "$body" "$seg" || return 1; fi
   done
   cs__heredocs=()
 }
@@ -104,9 +105,9 @@ cs__heredoc_bodies() {
 # Queue the $( ) and backtick substitutions of an unquoted here-document body.
 # Quotes and # are plain text there, so they cannot hide a substitution.
 cs__body_substitutions() {
-  local saved=$cs__rest c run='^[^\\$`]+'
-  # The body belongs to the segment that opened it, which has just ended.
-  CS_NSEG=$((CS_NSEG - 1))
+  local saved=$cs__rest saved_seg=$CS_NSEG c run='^[^\\$`]+'
+  # The body belongs to the segment that opened the here-document.
+  CS_NSEG=$2
   cs__rest=$1
   while [[ -n "$cs__rest" ]]; do
     if [[ "$cs__rest" =~ $run ]]; then cs__rest=${cs__rest:${#BASH_REMATCH[0]}}; continue; fi
@@ -114,10 +115,10 @@ cs__body_substitutions() {
     case "$c" in
       \\) cs__rest=${cs__rest:1} ;;
       '$') [[ "${cs__rest:0:1}" != '(' ]] || { cs__rest=${cs__rest:1}; cs__substitution; } ;;
-      '`') cs__backtick || { cs__rest=$saved; CS_NSEG=$((CS_NSEG + 1)); return 1; } ;;
+      '`') cs__backtick || { cs__rest=$saved; CS_NSEG=$saved_seg; return 1; } ;;
     esac
   done
-  cs__rest=$saved; CS_NSEG=$((CS_NSEG + 1))
+  cs__rest=$saved; CS_NSEG=$saved_seg
 }
 
 # cs__arith_body TEXT: true when TEXT, the inside of $( ), is "( ... )" with
