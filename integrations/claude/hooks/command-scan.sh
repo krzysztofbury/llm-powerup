@@ -19,6 +19,7 @@ CS_START=()       # per segment: index of its first word
 CS_END=()         # per segment: index after its last word
 CS_PENDING=()     # command texts found inside substitutions, scanned afterwards
 CS_PSEG=()        # per pending text: the segment number it was found in (-1 for the command)
+CS_PARITH=()      # per pending text: true for the body of $(( )), where << is a shift
 CS_SEP=()         # per segment number: what started it ("start", "sub", ";", newline, "&&", "||", "|", "|&", "&", "paren", "end")
 CS_DEPTH=()       # per segment number: subshell depth; a substitution starts at 1
 CS_ORIGIN=()      # per segment number: 0 for the command itself, k for its k-th substitution
@@ -47,7 +48,7 @@ CS_PRIVILEGED='sudo|doas|run0|pkexec'
 CS_ARTIFACT_NAMES='node_modules|dist|build|__pycache__|.pytest_cache|.ruff_cache|.mypy_cache|.tox|.nox|.coverage|htmlcov|coverage|.next|.nuxt|.turbo|.parcel-cache|.svelte-kit|target|.eggs|.hypothesis'
 
 cs__rest=""; cs__w=""; cs__f=""; cs__in=false; cs__skip=false; cs__mk=false
-cs__depth=0; cs__origin=0
+cs__depth=0; cs__origin=0; cs__base=0; cs__arith=false
 cs__heredoc=false; cs__hdmode=""; cs__quoted=false; cs__heredocs=()
 
 cs__flush() {
@@ -97,7 +98,7 @@ cs__heredoc_bodies() {
     # An unquoted delimiter still expands substitutions inside the body.
     # shellcheck disable=SC2016  # Literal $( and backtick are being matched.
     if [[ "$quoted" != true && ( "$body" == *'$('* || "$body" == *'`'* ) ]]; then
-      CS_PENDING+=("$body"); CS_PSEG+=("$((CS_NSEG - 1))")
+      CS_PENDING+=("$body"); CS_PSEG+=("$((CS_NSEG - 1))"); CS_PARITH+=(false)
     fi
   done
   cs__heredocs=()
@@ -151,7 +152,7 @@ cs__substitution() {
       '(') depth=$((depth + 1)); inner+=$c ;;
       ')')
         depth=$((depth - 1))
-        if (( depth == 0 )); then CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); return 0; fi
+        if (( depth == 0 )); then CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=("$arith"); return 0; fi
         inner+=$c
         ;;
       "'")
@@ -171,7 +172,7 @@ cs__substitution() {
       \\) inner+="\\${cs__rest:0:1}"; cs__rest=${cs__rest:1} ;;
     esac
   done
-  CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG")
+  CS_PENDING+=("$inner"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=("$arith")
 }
 
 # After a substitution: when the word so far is "NAME=" and the substitution
@@ -194,7 +195,7 @@ cs__backtick() {
   local re='^([^`\\]|\\.)*`' match
   [[ "$cs__rest" =~ $re ]] || return 1
   match=${BASH_REMATCH[0]}
-  CS_PENDING+=("${match%?}"); CS_PSEG+=("$CS_NSEG")
+  CS_PENDING+=("${match%?}"); CS_PSEG+=("$CS_NSEG"); CS_PARITH+=(false)
   cs__rest=${cs__rest:${#match}}
 }
 
@@ -236,6 +237,15 @@ cs__redirect() {
   local first=$1
   if [[ "$first" == '<' ]]; then
     if [[ "${cs__rest:0:2}" == '<<' ]]; then cs__rest=${cs__rest:2}; cs__skip=true; return 0; fi
+    if [[ "${cs__rest:0:1}" == '<' && "$cs__arith" == true ]]; then
+      # A shift in the body of $(( )).
+      cs__rest=${cs__rest:1}; cs__skip=true; return 0
+    fi
+    if [[ "${cs__rest:0:1}" == '<' ]] && (( cs__depth > cs__base )); then
+      # Inside (( )) a << is a shift; inside ( ) it may be either. Either way
+      # a here-document guess could hide what follows, so ask.
+      CS__UNCLOSED=true
+    fi
     if [[ "${cs__rest:0:2}" == '<-' ]]; then
       cs__rest=${cs__rest:2}; cs__heredoc=true; cs__hdmode=-; return 0
     fi
@@ -253,7 +263,8 @@ cs__scan_one() {
   local c before run='^[^][:space:];&|()<>'\''"\$`*?{}~#[]+'
   cs__rest=$1; cs__w=""; cs__f=""; cs__in=false; cs__skip=false; cs__mk=false
   cs__heredoc=false; cs__quoted=false; cs__heredocs=()
-  cs__origin=$3; if [[ "$2" == start ]]; then cs__depth=0; else cs__depth=1; fi
+  cs__origin=$3; cs__arith=${4:-false}; if [[ "$2" == start ]]; then cs__depth=0; else cs__depth=1; fi
+  cs__base=$cs__depth
   CS_SEP[CS_NSEG]=$2; CS_DEPTH[CS_NSEG]=$cs__depth; CS_ORIGIN[CS_NSEG]=$cs__origin
   while [[ -n "$cs__rest" ]]; do
     if [[ "$cs__rest" =~ $run ]]; then
@@ -347,11 +358,11 @@ cs__scan_one() {
 cs_scan() {
   local k=0 i s LC_ALL=C
   CS_WORDS=(); CS_FLAGS=(); CS_SEG=(); CS_START=(); CS_END=(); CS_NSEG=0; CS_SEP=(); CS_DEPTH=(); CS_ORIGIN=()
-  CS_PENDING=("$1"); CS_PSEG=(-1); CS__UNCLOSED=false
+  CS_PENDING=("$1"); CS_PSEG=(-1); CS_PARITH=(false); CS__UNCLOSED=false
   while (( k < ${#CS_PENDING[@]} )); do
     (( k <= 64 )) || return 1
     if (( k == 0 )); then s=start; else s=sub; fi
-    cs__scan_one "${CS_PENDING[k]}" "$s" "$k" || return 1
+    cs__scan_one "${CS_PENDING[k]}" "$s" "$k" "${CS_PARITH[k]}" || return 1
     [[ "$CS__UNCLOSED" == false ]] || return 1
     k=$((k + 1))
   done

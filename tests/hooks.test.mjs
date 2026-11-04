@@ -330,6 +330,9 @@ test('a here-document inside a command substitution is skipped as text', t => {
   assert.equal(run('block-dangerous', 'x=$((1 << 2\n))\nrm -rf /'), 'ask');
   assert.equal(run('block-dangerous', '((x = 1 << 2\n))\nrm -rf /'), 'ask');
   assert.equal(run('block-dangerous', 'cat <<EOF\nrm -rf /'), 'ask');
+  assert.equal(run('block-dangerous', '((x = 1 << EOF))\nrm -rf /\nEOF'), 'ask');
+  assert.equal(run('block-dangerous', 'echo "$((1 << EOF\n$(rm -rf /)\nEOF\n))"'), 'ask');
+  assert.equal(run('block-dangerous', 'echo $((1 << EOF)) && echo done'), undefined);
   assert.equal(run('block-dangerous', 'echo $((1 << 2)) "$(cat <<<x)"'), undefined);
 });
 
