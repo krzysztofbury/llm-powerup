@@ -105,6 +105,8 @@ cs__heredoc_bodies() {
 # Quotes and # are plain text there, so they cannot hide a substitution.
 cs__body_substitutions() {
   local saved=$cs__rest c run='^[^\\$`]+'
+  # The body belongs to the segment that opened it, which has just ended.
+  CS_NSEG=$((CS_NSEG - 1))
   cs__rest=$1
   while [[ -n "$cs__rest" ]]; do
     if [[ "$cs__rest" =~ $run ]]; then cs__rest=${cs__rest:${#BASH_REMATCH[0]}}; continue; fi
@@ -112,10 +114,10 @@ cs__body_substitutions() {
     case "$c" in
       \\) cs__rest=${cs__rest:1} ;;
       '$') [[ "${cs__rest:0:1}" != '(' ]] || { cs__rest=${cs__rest:1}; cs__substitution; } ;;
-      '`') cs__backtick || { cs__rest=$saved; return 1; } ;;
+      '`') cs__backtick || { cs__rest=$saved; CS_NSEG=$((CS_NSEG + 1)); return 1; } ;;
     esac
   done
-  cs__rest=$saved
+  cs__rest=$saved; CS_NSEG=$((CS_NSEG + 1))
 }
 
 # cs__arith_body TEXT: true when TEXT, the inside of $( ), is "( ... )" with
@@ -180,7 +182,11 @@ cs__substitution() {
       ')')
         depth=$((depth - 1))
         if (( depth == 0 )); then
-          if [[ "$arith" == true ]] && ! cs__arith_body "$inner"; then
+          if [[ "$arith" == true && "$inner" == *[$'\n'\'\"\`#]* ]]; then
+            # Bash may read this as a subshell, where quotes, # and lines
+            # mean something else; ask rather than guess.
+            CS__UNCLOSED=true
+          elif [[ "$arith" == true ]] && ! cs__arith_body "$inner"; then
             # Not arithmetic after all: a subshell whose << went unchecked.
             arith=false
             [[ "$inner" != *'<<'* ]] || CS__UNCLOSED=true

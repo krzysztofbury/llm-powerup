@@ -254,6 +254,7 @@ test('a leading cd to an existing directory sets the working directory', t => {
   assert.equal(run('confirm-external-impact', `HOME=/ cd ~/repo && git push origin feature/example`, { cwd: base, env: { HOME: base } }), 'ask');
   // A substitution in the cd itself runs before the cd, in the old directory.
   assert.equal(run('block-dangerous', `cd ${scratch} 2>"$(rm -rf build)"`), 'ask');
+  assert.equal(run('block-dangerous', `cd ${scratch} <<EOF\n$(rm -rf build)\nEOF`), 'ask');
   for (const command of [`cd ${scratch} | true; rm -rf build`, `cd ${base} && rm -rf repo`, `(cd ${scratch}) && rm -rf dist`, `cd ${scratch} & rm -rf build`]) {
     assert.equal(run('block-dangerous', command), 'ask', command);
   }
@@ -341,6 +342,7 @@ test('a here-document inside a command substitution is skipped as text', t => {
   assert.equal(inTree('block-dangerous', "cat <<EOF\nit's $(date)\nEOF"), undefined);
   // $(( that is not arithmetic is a command substitution with a subshell.
   assert.equal(run('block-dangerous', '$((cat <<EOF\nx\nEOF\n) )'), 'ask');
+  assert.equal(inTree('block-dangerous', '$((cat <<EOF\n# $(rm -rf src)\nEOF\n))'), 'ask');
   assert.equal(run('block-dangerous', 'echo $((1 << 2)) "$(cat <<<x)"'), undefined);
 });
 
