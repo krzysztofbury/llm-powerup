@@ -10,3 +10,6 @@ Icon?
 NETWORK_SNAPSHOT.md
 *.log
 __pycache__/
+
+# Agent planning artifacts (brainstorm specs and implementation plans) stay local.
+docs/superpowers/
