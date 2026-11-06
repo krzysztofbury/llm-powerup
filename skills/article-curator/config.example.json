@@ -1,0 +1,25 @@
+{
+  "root": "~/notes",
+  "inbox_dir": "Clippings",
+  "sources_dir": "Sources",
+  "priority_sources_dir": "Sources/Priority",
+  "review_dir": "Review",
+  "notes_dir": "Notes",
+  "protocols_dir": "Protocols",
+  "keep_sources": false,
+  "trash_dir": ".trash",
+  "trash_command": null,
+  "note_template": null,
+  "language": "auto",
+  "link_style": "wikilink",
+  "tags": {
+    "mode": "vocabulary",
+    "vocabulary": "Meta/tags.md",
+    "prefix": "topic/",
+    "max": 5
+  },
+  "context_files": ["About/goals.md", "About/projects.md"],
+  "memory_file": "Review/memory-candidates.md",
+  "batch_size": 5,
+  "post_write_command": null
+}

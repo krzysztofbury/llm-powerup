@@ -36,7 +36,8 @@ jobs:
           done < <(git ls-files -z '*.sh')
       - run: node --test tests/*.test.mjs integrations/opendeck/dev.krzysztof.agents.sdPlugin/test/*.test.js
       - run: bash skills/council/scripts/council_test.sh
-      - run: shellcheck integrations/claude/hooks/*.sh
+      - run: bash skills/retro/scripts/ledger_test.sh
+      - run: shellcheck hooks/claude/*.sh integrations/claude/*.sh scripts/*.sh
       - name: Test Claude guards
         run: |
           assert_ask() {
@@ -52,30 +53,30 @@ jobs:
           }
 
           # guard-readonly-postgres.sh
-          assert_pass "$(cmd_payload "psql -c 'SELECT 1'")" integrations/claude/hooks/guard-readonly-postgres.sh
-          assert_ask "$(cmd_payload "psql -c 'DELETE FROM example'")" integrations/claude/hooks/guard-readonly-postgres.sh
-          assert_ask "$(cmd_payload "psql -c 'SELECT pg_terminate_backend(1)'")" integrations/claude/hooks/guard-readonly-postgres.sh
-          assert_ask "$(cmd_payload "psql -c 'select 1' -c 'update t set x=1'")" integrations/claude/hooks/guard-readonly-postgres.sh
-          assert_ask "$(cmd_payload "psql -c 'SELECT 1' -c 'SELECT 2'")" integrations/claude/hooks/guard-readonly-postgres.sh
-          assert_ask "$(cmd_payload "psql -c 'SELECT 1' -c'DROP TABLE students'")" integrations/claude/hooks/guard-readonly-postgres.sh
+          assert_pass "$(cmd_payload "psql -c 'SELECT 1'")" hooks/claude/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'DELETE FROM example'")" hooks/claude/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'SELECT pg_terminate_backend(1)'")" hooks/claude/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'select 1' -c 'update t set x=1'")" hooks/claude/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'SELECT 1' -c 'SELECT 2'")" hooks/claude/guard-readonly-postgres.sh
+          assert_ask "$(cmd_payload "psql -c 'SELECT 1' -c'DROP TABLE students'")" hooks/claude/guard-readonly-postgres.sh
 
           # block-dangerous.sh
-          assert_ask "$(cmd_payload "rm -rf generated")" integrations/claude/hooks/block-dangerous.sh
-          assert_pass "$(cmd_payload "rm /tmp/scratch.txt")" integrations/claude/hooks/block-dangerous.sh
-          assert_ask "$(cmd_payload "ls | xargs rm")" integrations/claude/hooks/block-dangerous.sh
-          assert_ask "$(cmd_payload "find / -name '*.log' -delete")" integrations/claude/hooks/block-dangerous.sh
-          assert_ask "$(cmd_payload "mysql -e \"UPDATE users SET admin=1 WHERE id=5\"")" integrations/claude/hooks/block-dangerous.sh
-          assert_pass "$(cmd_payload "truncate -s 0 file.log")" integrations/claude/hooks/block-dangerous.sh
-          assert_pass "$(cmd_payload "git stash drop")" integrations/claude/hooks/block-dangerous.sh
-          assert_pass "$(cmd_payload "git push --force-with-lease")" integrations/claude/hooks/block-dangerous.sh
-          assert_ask "$(cmd_payload "git push --force")" integrations/claude/hooks/block-dangerous.sh
-          assert_ask "$(cmd_payload "git checkout .")" integrations/claude/hooks/block-dangerous.sh
-          assert_pass "$(cmd_payload "git checkout release/v1.2")" integrations/claude/hooks/block-dangerous.sh
+          assert_ask "$(cmd_payload "rm -rf generated")" hooks/claude/block-dangerous.sh
+          assert_pass "$(cmd_payload "rm /tmp/scratch.txt")" hooks/claude/block-dangerous.sh
+          assert_ask "$(cmd_payload "ls | xargs rm")" hooks/claude/block-dangerous.sh
+          assert_ask "$(cmd_payload "find / -name '*.log' -delete")" hooks/claude/block-dangerous.sh
+          assert_ask "$(cmd_payload "mysql -e \"UPDATE users SET admin=1 WHERE id=5\"")" hooks/claude/block-dangerous.sh
+          assert_pass "$(cmd_payload "truncate -s 0 file.log")" hooks/claude/block-dangerous.sh
+          assert_pass "$(cmd_payload "git stash drop")" hooks/claude/block-dangerous.sh
+          assert_pass "$(cmd_payload "git push --force-with-lease")" hooks/claude/block-dangerous.sh
+          assert_ask "$(cmd_payload "git push --force")" hooks/claude/block-dangerous.sh
+          assert_ask "$(cmd_payload "git checkout .")" hooks/claude/block-dangerous.sh
+          assert_pass "$(cmd_payload "git checkout release/v1.2")" hooks/claude/block-dangerous.sh
 
           # confirm-external-impact.sh
-          assert_ask "$(cmd_payload "git push origin main")" integrations/claude/hooks/confirm-external-impact.sh
-          assert_ask "$(cmd_payload "gh pr create")" integrations/claude/hooks/confirm-external-impact.sh
-          assert_ask "$(cmd_payload "aws s3 sync . s3://bucket")" integrations/claude/hooks/confirm-external-impact.sh
-          assert_ask "$(cmd_payload "flyctl deploy")" integrations/claude/hooks/confirm-external-impact.sh
-          assert_ask "$(cmd_payload "make deploy")" integrations/claude/hooks/confirm-external-impact.sh
-          assert_ask "$(cmd_payload "git -C /some/repo push origin main")" integrations/claude/hooks/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "git push origin main")" hooks/claude/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "gh pr create")" hooks/claude/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "aws s3 sync . s3://bucket")" hooks/claude/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "flyctl deploy")" hooks/claude/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "make deploy")" hooks/claude/confirm-external-impact.sh
+          assert_ask "$(cmd_payload "git -C /some/repo push origin main")" hooks/claude/confirm-external-impact.sh

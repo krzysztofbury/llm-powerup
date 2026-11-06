@@ -5,13 +5,13 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { DatabaseSync } = require('node:sqlite');
 
 const ACTIONS = Object.freeze({
   pulse: 'dev.krzysztof.agents.pulse',
   session: 'dev.krzysztof.agents.session',
   quota: 'dev.krzysztof.agents.quota',
   activity: 'dev.krzysztof.agents.activity',
+  command: 'dev.krzysztof.agents.command',
 });
 
 const COLORS = Object.freeze({
@@ -40,6 +40,18 @@ let latestQuotaError;
 let lastQuotaRefresh = 0;
 let activityRefreshPending = false;
 const activityByHours = new Map();
+let latestClaudeRecord;
+let latestClaudeRecordError;
+let claudeRefreshPending = false;
+const commandStates = new Map();
+
+// Omarchy's agents panel rewrites the Claude record every 15 minutes, so twice
+// that is stale.
+const CLAUDE_STALE_MS = 30 * 60_000;
+const CLAUDE_QUOTA_WINDOWS = Object.freeze([
+  { label: '5H', match: /5-hour/i },
+  { label: '7D', match: /^weekly \(7-day\)$/i },
+]);
 
 function parseArgs(argv = process.argv.slice(2)) {
   const parsed = {};
@@ -250,6 +262,8 @@ function renderQuota(windows, error, lastSuccess) {
 }
 
 function queryActivity(hours, databasePath = process.env.OPENCODE_DB || path.join(os.homedir(), '.local/share/opencode/opencode.db')) {
+  // Loaded lazily so the other keys still work on a Node without node:sqlite.
+  const { DatabaseSync } = require('node:sqlite');
   const db = new DatabaseSync(databasePath, { readOnly: true });
   try {
     const row = db.prepare(`
@@ -286,6 +300,131 @@ function renderActivity(hours, activity) {
     main: `${compactNumber(tokens)} TOK`,
     footer: `${activity.sessions} sess | ${compactNumber(activity.cache_read)} cache`,
   });
+}
+
+// With `source: "claude"`, the quota and activity keys read the record that
+// Omarchy's omarchy-agent-usage-claude collector writes for its agents panel.
+// The collector owns the OAuth usage call and the transcript scan, so the deck
+// never touches Claude credentials and does not poll the endpoint a second time.
+function claudeUsageRecordPath() {
+  const stateHome = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local/state');
+  return process.env.CLAUDE_USAGE_RECORD || path.join(stateHome, 'omarchy/agents/usage/claude.json');
+}
+
+function readClaudeUsageRecord(recordPath = claudeUsageRecordPath()) {
+  const record = JSON.parse(fs.readFileSync(recordPath, 'utf8'));
+  if (record?.id !== 'claude') throw new Error('not a Claude usage record');
+  return record;
+}
+
+// The record stores each limit as a used fraction from 0 to 1, or -1 when unknown.
+function normalizeClaudeQuota(record, now = Date.now()) {
+  const limits = Array.isArray(record?.limits) ? record.limits : [];
+  const windows = CLAUDE_QUOTA_WINDOWS.map(({ label, match }) => {
+    const limit = limits.find((candidate) => match.test(String(candidate?.label || '')));
+    const fraction = limit?.percent;
+    if (typeof fraction !== 'number' || !Number.isFinite(fraction) || fraction < 0) return null;
+    const resetsAt = Date.parse(limit.resetsAt || '');
+    // A window that reset after the record was written starts again from zero.
+    const usedPercent = resetsAt <= now ? 0 : Math.round(Math.min(1, fraction) * 100);
+    return { label, usedPercent, remainingPercent: 100 - usedPercent, resetsAt: Number.isFinite(resetsAt) ? resetsAt : null };
+  }).filter(Boolean);
+  if (!windows.length) throw new Error(record?.usageStatusText || 'no limits in record');
+  const updatedAt = Date.parse(record.updatedAt || '');
+  return { windows, updatedAt: Number.isFinite(updatedAt) ? updatedAt : null };
+}
+
+function ageLabel(updatedAt, now = Date.now()) {
+  if (!updatedAt) return '?';
+  const minutes = Math.max(0, Math.round((now - updatedAt) / 60_000));
+  return minutes < 1 ? 'NOW' : durationLabel(minutes);
+}
+
+function renderClaudeQuota(record, error, now = Date.now()) {
+  let quota;
+  try {
+    if (record) quota = normalizeClaudeQuota(record, now);
+  } catch (quotaError) {
+    error = quotaError.message;
+  }
+  if (!quota) {
+    return renderCard({
+      accent: error ? COLORS.blocked : COLORS.working,
+      title: 'CLAUDE LIMITS',
+      main: error ? 'NO DATA' : 'LOADING',
+      footer: truncate(error || 'reading usage', 18),
+    });
+  }
+  const stale = Boolean(error) || !quota.updatedAt || now - quota.updatedAt > CLAUDE_STALE_MS;
+  const minimum = Math.min(...quota.windows.map((window) => window.remainingPercent));
+  const accent = stale ? COLORS.working : minimum <= 20 ? COLORS.blocked : minimum <= 50 ? COLORS.working : COLORS.done;
+  return renderCard({
+    accent,
+    title: stale ? 'CLAUDE STALE' : 'CLAUDE LEFT',
+    main: quota.windows.map((window) => `${window.remainingPercent}%`).join(' | '),
+    footer: `${quota.windows.map((window) => window.label).join(' | ')} | ${ageLabel(quota.updatedAt, now)}`,
+  });
+}
+
+// Token totals include cache reads, matching the Omarchy panel.
+function summarizeClaudeActivity(record, hours) {
+  if (hours <= 24) {
+    return {
+      title: 'CLAUDE TODAY',
+      tokens: Number(record.todayTotalTokens) || 0,
+      footer: `${Number(record.todaySessions) || 0} sessions`,
+    };
+  }
+  const days = (Array.isArray(record.recentDays) ? record.recentDays : []).slice(-Math.max(1, Math.round(hours / 24)));
+  // recentDays[].messageCount is a token total despite its legacy name.
+  const counts = days.map((day) => Number(day?.messageCount) || 0);
+  return {
+    title: `CLAUDE ${days.length}D`,
+    tokens: counts.reduce((sum, count) => sum + count, 0),
+    footer: `${counts.filter((count) => count > 0).length} active days`,
+  };
+}
+
+function renderClaudeActivity(hours, record, error) {
+  const title = hours <= 24 ? 'CLAUDE TODAY' : `CLAUDE ${Math.round(hours / 24)}D`;
+  if (!record) {
+    return renderCard({
+      accent: error ? COLORS.blocked : COLORS.working,
+      title,
+      main: error ? 'NO DATA' : 'LOADING',
+      footer: truncate(error || 'local activity', 18),
+    });
+  }
+  const activity = summarizeClaudeActivity(record, hours);
+  return renderCard({ accent: COLORS.idle, title: activity.title, main: compactNumber(activity.tokens), footer: activity.footer });
+}
+
+// Asks Omarchy to rewrite the Claude record, as its panel's refresh does.
+// Resolves either way; a failure only means the deck keeps the old record.
+function runClaudeUsageRefresh(args = [], timeoutMs = 60_000) {
+  const executable = process.env.OMARCHY_AGENT_USAGE_UPDATE || 'omarchy-agent-usage-update';
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(executable, [...args, 'claude'], { stdio: 'ignore' });
+    } catch (error) {
+      resolve({ ok: false, error: error.message });
+      return;
+    }
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: error.message });
+    });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      resolve(code === 0 ? { ok: true } : { ok: false, error: signal ? 'usage refresh timed out' : `usage refresh exited with ${code}` });
+    });
+  });
+}
+
+function usesClaudeSource(instance) {
+  return String(instance?.settings?.source || '').toLowerCase() === 'claude';
 }
 
 function requestHerdr(method, params = {}, timeoutMs = 2000) {
@@ -331,17 +470,26 @@ function requestHerdr(method, params = {}, timeoutMs = 2000) {
   });
 }
 
-function resolveCodexExecutable(configured = 'codex') {
+// Expands a leading `~/` and resolves a bare name through PATH, then through
+// the extra directories. A desktop-started OpenDeck often lacks ~/.local/bin on
+// PATH. Returns the configured value unchanged when nothing matches, so spawn
+// reports ENOENT for it.
+function resolveExecutable(configured, extraCandidates = []) {
   if (configured.includes('/')) return configured.replace(/^~(?=\/)/, os.homedir());
-  for (const directory of (process.env.PATH || '').split(path.delimiter)) {
-    const candidate = path.join(directory, configured);
+  const candidates = (process.env.PATH || '').split(path.delimiter).filter(Boolean)
+    .map((directory) => path.join(directory, configured))
+    .concat(extraCandidates);
+  for (const candidate of candidates) {
     try {
       fs.accessSync(candidate, fs.constants.X_OK);
-      return candidate;
+      if (fs.statSync(candidate).isFile()) return candidate;
     } catch {}
   }
-  const miseCandidate = path.join(os.homedir(), '.local/share/mise/installs/codex/latest/bin/codex');
-  return fs.existsSync(miseCandidate) ? miseCandidate : configured;
+  return configured;
+}
+
+function resolveCodexExecutable(configured = 'codex') {
+  return resolveExecutable(configured, [path.join(os.homedir(), '.local/share/mise/installs/codex/latest/bin/codex')]);
 }
 
 function fetchCodexQuota(settings = {}, timeoutMs = 10_000) {
@@ -432,6 +580,130 @@ function fetchCodexQuota(settings = {}, timeoutMs = 10_000) {
   });
 }
 
+// Run Command keys take everything from their action settings. The command is
+// started directly with an argument vector, never through a shell, so no
+// quoting, globbing, variable or `~` expansion happens inside arguments.
+const COMMAND_STATUS_WORDS = Object.freeze({
+  on: 'on', true: 'on', yes: 'on', active: 'on', enabled: 'on', 1: 'on',
+  off: 'off', false: 'off', no: 'off', inactive: 'off', disabled: 'off', 0: 'off',
+});
+const COMMAND_OUTPUT_LIMIT = 4096;
+
+function clampSeconds(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  return Math.max(minimum, Math.min(maximum, Number.isFinite(number) && number > 0 ? number : fallback)) * 1000;
+}
+
+function stringList(value, name) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string' && !item.includes('\0'))) {
+    throw new Error(`${name} must be a list of strings`);
+  }
+  return [...value];
+}
+
+function commandSettings(settings = {}) {
+  const command = typeof settings.command === 'string' ? settings.command.trim() : '';
+  if (!command || command.includes('\0')) throw new Error('command is not set');
+  const statusArgs = settings.statusArgs === undefined || settings.statusArgs === null
+    ? null
+    : stringList(settings.statusArgs, 'statusArgs');
+  const onColor = /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(String(settings.onColor || '')) ? settings.onColor : COLORS.done;
+  return {
+    command,
+    args: stringList(settings.args, 'args'),
+    statusArgs,
+    title: String(settings.title || path.basename(command)).toUpperCase(),
+    onText: String(settings.onText || 'ON'),
+    offText: String(settings.offText || 'OFF'),
+    onColor,
+    intervalMs: clampSeconds(settings.intervalSeconds, 5, 1, 3600),
+    timeoutMs: clampSeconds(settings.timeoutSeconds, 15, 1, 600),
+  };
+}
+
+// Resolves with { code, stdout, error } and never rejects. The child gets its
+// own process group, so a timeout kills anything it started in the
+// foreground as well. Without captureOutput, stdout is discarded and the
+// promise settles when the command exits, even if it left a background child
+// holding the inherited descriptors.
+function runCommand(command, args = [], { timeoutMs = 15_000, captureOutput = false } = {}) {
+  return new Promise((resolve) => {
+    let child;
+    let stdout = '';
+    let timedOut = false;
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    try {
+      child = spawn(resolveExecutable(command, [path.join(os.homedir(), '.local/bin', command)]), args, {
+        cwd: os.homedir(),
+        detached: true,
+        shell: false,
+        stdio: ['ignore', captureOutput ? 'pipe' : 'ignore', 'ignore'],
+      });
+    } catch (error) {
+      resolve({ code: -1, stdout: '', error: error.message });
+      return;
+    }
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {
+        child.kill('SIGKILL');
+      }
+    }, timeoutMs);
+    if (captureOutput) {
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => {
+        if (stdout.length < COMMAND_OUTPUT_LIMIT) stdout = `${stdout}${chunk}`.slice(0, COMMAND_OUTPUT_LIMIT);
+      });
+    }
+    child.on('error', (error) => finish({ code: -1, stdout, error: error.message }));
+    child.on(captureOutput ? 'close' : 'exit', (code, signal) => {
+      if (timedOut) finish({ code: -1, stdout, error: 'timed out' });
+      else finish({ code: code ?? -1, stdout, ...(signal ? { error: `killed by ${signal}` } : {}) });
+    });
+  });
+}
+
+// A first stdout line such as `on` or `off` wins; otherwise exit status 0
+// means on and any other exit status means off.
+function interpretCommandStatus(result) {
+  if (result.error) return 'error';
+  const word = String(result.stdout || '').trim().split('\n')[0].trim().toLowerCase();
+  if (Object.hasOwn(COMMAND_STATUS_WORDS, word)) return COMMAND_STATUS_WORDS[word];
+  return result.code === 0 ? 'on' : 'off';
+}
+
+function renderCommand({ title = 'COMMAND', state = 'idle', onText = 'ON', offText = 'OFF', onColor = COLORS.done } = {}) {
+  const looks = {
+    idle: { fill: COLORS.panel, ink: COLORS.text, text: COLORS.text, label: 'RUN' },
+    pending: { fill: COLORS.working, ink: COLORS.background, text: COLORS.background, label: 'WAIT' },
+    on: { fill: onColor, ink: COLORS.text, text: COLORS.text, label: onText },
+    off: { fill: COLORS.background, ink: COLORS.offline, text: COLORS.muted, label: offText, slash: true },
+    error: { fill: COLORS.background, ink: COLORS.blocked, text: COLORS.blocked, label: 'ERROR' },
+  };
+  const look = looks[state] || looks.idle;
+  const slash = look.slash
+    ? `<line x1="16" y1="52" x2="56" y2="20" stroke="${COLORS.muted}" stroke-width="4" stroke-linecap="round"/>`
+    : '';
+  return `data:image/svg+xml;base64,${Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72" viewBox="0 0 72 72">
+  <rect width="72" height="72" rx="14" fill="${look.fill}"/>
+  <text x="36" y="15" text-anchor="middle" fill="${look.text}" font-family="sans-serif" font-size="9" font-weight="700">${escapeXml(truncate(title, 12))}</text>
+  <rect x="16" y="22" width="40" height="28" rx="4" fill="none" stroke="${look.ink}" stroke-width="3"/>
+  <path d="M23 30l6 6-6 6" fill="none" stroke="${look.ink}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="33" y1="43" x2="45" y2="43" stroke="${look.ink}" stroke-width="3" stroke-linecap="round"/>
+  ${slash}
+  <text x="36" y="65" text-anchor="middle" fill="${look.text}" font-family="sans-serif" font-size="11" font-weight="800">${escapeXml(truncate(look.label, 10))}</text>
+</svg>`).toString('base64')}`;
+}
+
 function safeSend(payload) {
   if (deckSocket?.readyState === WebSocket.OPEN) deckSocket.send(JSON.stringify(payload));
 }
@@ -479,12 +751,12 @@ function renderQuotaContexts(refreshMinutes) {
   const expired = latestQuota && Date.now() - lastQuotaRefresh >= refreshMinutes * 60_000;
   const image = renderQuota(latestQuota, latestQuotaError || (expired ? 'Quota refresh overdue' : undefined), lastQuotaRefresh);
   for (const [context, instance] of contexts) {
-    if (instance.action === ACTIONS.quota) setImage(context, image);
+    if (instance.action === ACTIONS.quota && !usesClaudeSource(instance)) setImage(context, image);
   }
 }
 
 async function refreshQuota(force = false) {
-  const quotaContexts = [...contexts.entries()].filter(([, instance]) => instance.action === ACTIONS.quota);
+  const quotaContexts = [...contexts.entries()].filter(([, instance]) => instance.action === ACTIONS.quota && !usesClaudeSource(instance));
   if (!quotaContexts.length) return;
   const refreshMinutes = Math.max(1, Math.min(1440, Number(quotaContexts[0][1].settings.refreshMinutes) || 5));
   renderQuotaContexts(refreshMinutes);
@@ -508,7 +780,7 @@ async function refreshQuota(force = false) {
 
 async function refreshActivity() {
   if (activityRefreshPending) return;
-  const activityContexts = [...contexts.entries()].filter(([, instance]) => instance.action === ACTIONS.activity);
+  const activityContexts = [...contexts.entries()].filter(([, instance]) => instance.action === ACTIONS.activity && !usesClaudeSource(instance));
   if (!activityContexts.length) return;
   activityRefreshPending = true;
   try {
@@ -525,6 +797,110 @@ async function refreshActivity() {
     }
   } finally {
     activityRefreshPending = false;
+  }
+}
+
+// The Claude record is a small local file, so it is reread on every tick.
+function refreshClaudeUsage() {
+  const claudeContexts = [...contexts.entries()].filter(([, instance]) => (
+    (instance.action === ACTIONS.quota || instance.action === ACTIONS.activity) && usesClaudeSource(instance)
+  ));
+  if (!claudeContexts.length) return;
+  try {
+    latestClaudeRecord = readClaudeUsageRecord();
+    latestClaudeRecordError = undefined;
+  } catch (error) {
+    latestClaudeRecordError = error.code === 'ENOENT' ? 'no usage record' : error.message;
+  }
+  for (const [context, instance] of claudeContexts) {
+    if (instance.action === ACTIONS.quota) setImage(context, renderClaudeQuota(latestClaudeRecord, latestClaudeRecordError));
+    else setImage(context, renderClaudeActivity(Number(instance.settings.hours) || 24, latestClaudeRecord, latestClaudeRecordError));
+  }
+}
+
+async function forceClaudeUsageRefresh(context, limitsOnly) {
+  if (claudeRefreshPending) return;
+  claudeRefreshPending = true;
+  try {
+    const result = await runClaudeUsageRefresh(limitsOnly ? ['--limits-only'] : []);
+    if (!result.ok) console.error('[Agents] Claude usage refresh failed:', result.error);
+    showFeedback(result.ok ? 'showOk' : 'showAlert', context);
+  } finally {
+    claudeRefreshPending = false;
+    refreshClaudeUsage();
+  }
+}
+
+function renderCommandContext(context) {
+  const entry = commandStates.get(context);
+  if (!entry || !contexts.has(context)) return;
+  if (entry.error) {
+    setImage(context, renderCommand({ title: 'COMMAND', state: 'error' }));
+    return;
+  }
+  setImage(context, renderCommand({ ...entry.config, state: entry.pending ? 'pending' : entry.state }));
+}
+
+function prepareCommandContext(context, settings) {
+  const entry = { state: 'idle', pending: false, polling: false, lastPoll: 0 };
+  try {
+    entry.config = commandSettings(settings);
+    if (entry.config.statusArgs) entry.state = 'off';
+  } catch (error) {
+    entry.error = error.message;
+    console.error('[Agents] Run Command settings invalid:', error.message);
+  }
+  commandStates.set(context, entry);
+  renderCommandContext(context);
+  return entry;
+}
+
+async function pollCommand(context) {
+  const entry = commandStates.get(context);
+  if (!entry?.config?.statusArgs || entry.pending || entry.polling) return;
+  entry.polling = true;
+  entry.lastPoll = Date.now();
+  const { command, statusArgs, timeoutMs } = entry.config;
+  const result = await runCommand(command, statusArgs, { timeoutMs: Math.min(timeoutMs, 5000), captureOutput: true });
+  entry.polling = false;
+  // Settings changed or the key went away while the status ran.
+  if (commandStates.get(context) !== entry || entry.pending) return;
+  entry.state = interpretCommandStatus(result);
+  if (result.error) console.error('[Agents] Run Command status failed:', result.error);
+  renderCommandContext(context);
+}
+
+async function pressCommand(context) {
+  const entry = commandStates.get(context);
+  if (!entry || entry.error) {
+    showFeedback('showAlert', context);
+    return;
+  }
+  if (entry.pending) return;
+  entry.pending = true;
+  renderCommandContext(context);
+  const { command, args, timeoutMs } = entry.config;
+  let result;
+  try {
+    result = await runCommand(command, args, { timeoutMs });
+  } finally {
+    entry.pending = false;
+  }
+  const ok = result.code === 0 && !result.error;
+  if (!ok) console.error('[Agents] Run Command failed:', result.error || `exit status ${result.code}`);
+  showFeedback(ok ? 'showOk' : 'showAlert', context);
+  if (commandStates.get(context) !== entry) return;
+  if (entry.config.statusArgs) {
+    while (entry.polling) await new Promise((resolve) => setTimeout(resolve, 20));
+    await pollCommand(context);
+  } else {
+    renderCommandContext(context);
+  }
+}
+
+function refreshCommands(now = Date.now()) {
+  for (const [context, entry] of commandStates) {
+    if (entry.config?.statusArgs && now - entry.lastPoll >= entry.config.intervalMs) void pollCommand(context);
   }
 }
 
@@ -556,13 +932,17 @@ async function handleMessage(raw) {
     contexts.set(context, { action, settings: message.payload?.settings || {} });
     lastImages.delete(context);
     if (action === ACTIONS.pulse || action === ACTIONS.session) await refreshHerdr();
-    if (action === ACTIONS.quota) await refreshQuota();
-    if (action === ACTIONS.activity) await refreshActivity();
+    const instance = contexts.get(context);
+    if ((action === ACTIONS.quota || action === ACTIONS.activity) && usesClaudeSource(instance)) refreshClaudeUsage();
+    else if (action === ACTIONS.quota) await refreshQuota();
+    else if (action === ACTIONS.activity) await refreshActivity();
+    if (action === ACTIONS.command && prepareCommandContext(context, instance.settings).config?.statusArgs) await pollCommand(context);
     return;
   }
   if (event === 'willDisappear') {
     contexts.delete(context);
     lastImages.delete(context);
+    commandStates.delete(context);
     return;
   }
   if (event !== 'keyDown') return;
@@ -573,8 +953,13 @@ async function handleMessage(raw) {
     const targetId = slotIds[slot];
     await focusAgent(context, latestAgents.find((agent) => agentIdentity(agent) === targetId));
   }
-  if (instance.action === ACTIONS.quota) await refreshQuota(true);
-  if (instance.action === ACTIONS.activity) await refreshActivity();
+  const claude = usesClaudeSource(instance);
+  if (instance.action === ACTIONS.quota) await (claude ? forceClaudeUsageRefresh(context, true) : refreshQuota(true));
+  if (instance.action === ACTIONS.activity) await (claude ? forceClaudeUsageRefresh(context, false) : refreshActivity());
+  if (instance.action === ACTIONS.command) {
+    if (!commandStates.has(context)) prepareCommandContext(context, instance.settings);
+    await pressCommand(context);
+  }
 }
 
 function startPlugin() {
@@ -590,7 +975,11 @@ function startPlugin() {
   deckSocket.addEventListener('error', (event) => console.error('[Agents] OpenDeck connection failed:', event.message || 'WebSocket error'));
   setInterval(() => { void refreshHerdr(); }, 2000);
   setInterval(() => { void refreshActivity(); }, 60_000);
-  setInterval(() => { void refreshQuota(); }, 30_000);
+  setInterval(() => {
+    void refreshQuota();
+    refreshClaudeUsage();
+  }, 30_000);
+  setInterval(refreshCommands, 1000);
 }
 
 if (require.main === module) startPlugin();
@@ -600,18 +989,29 @@ module.exports = {
   agentIdentity,
   compactNumber,
   decorateAgents,
+  commandSettings,
   durationLabel,
   fetchCodexQuota,
   highestPriorityAgent,
+  interpretCommandStatus,
+  normalizeClaudeQuota,
   normalizeQuota,
   parseArgs,
   queryActivity,
+  readClaudeUsageRecord,
   reconcileAgentSlots,
   requestHerdr,
   renderActivity,
   renderCard,
+  renderClaudeActivity,
+  renderClaudeQuota,
+  renderCommand,
   renderPulse,
   renderQuota,
   renderSession,
+  resolveExecutable,
+  runClaudeUsageRefresh,
+  runCommand,
   statusPriority,
+  summarizeClaudeActivity,
 };

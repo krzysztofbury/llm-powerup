@@ -9,7 +9,7 @@ Use WhatsApp formatting rather than GitHub-flavored Markdown.
 
 ## Syntax
 
-- Bold: `*text*`
+- Bold: `*text*` (single asterisks; never `**text**`)
 - Italic: `_text_`
 - Strikethrough: `~text~`
 - Monospace: triple backticks for code or identifiers
@@ -20,6 +20,8 @@ Use WhatsApp formatting rather than GitHub-flavored Markdown.
 ## Rules
 
 - Do not use Markdown headings, tables, horizontal rules, or double asterisks.
+- Replace a heading with a short line in bold caps, such as `*NEXT STEPS*`.
+- Replace a table with a flat bullet list, one item per row.
 - Keep paragraphs short and lists flat for a mobile screen.
 - Use raw URLs when the recipient needs to open a link.
 - Avoid nested formatting that may render as literal punctuation.

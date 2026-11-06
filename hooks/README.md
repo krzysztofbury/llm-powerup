@@ -1,26 +1,36 @@
-# Claude Code Integrations
+# Hooks
 
-These scripts implement Claude Code hook payloads. They are optional and are
-not portable Agent Skills.
+`claude/` holds Claude Code hook scripts and `codex/` the Codex patch lint
+hook. They are optional, harness-specific, and not portable Agent Skills.
 
-Install them by symlinking individual scripts into `~/.claude/hooks/`, then add
-the corresponding `PreToolUse` or `PostToolUse` entry in `~/.claude/settings.json`.
-The PreToolUse hooks require `jq` and source `hooks/command-scan.sh` from the
-directory of the resolved script, so a symlinked hook finds it automatically; a
-copied hook needs the helper copied next to it. A missing helper makes every
-Bash command ask for confirmation.
+`scripts/install.sh --claude` links every `claude/*.sh` into
+`~/.claude/hooks/` and merges `claude/hooks.json` into
+`~/.claude/settings.json`; `--codex` does the same for Codex (see
+[docs/INSTALL.md](../docs/INSTALL.md)). The PreToolUse hooks require `jq` and
+source `command-scan.sh` from the directory of the resolved script, so a
+symlinked hook finds it automatically; a copied hook needs the helper copied
+next to it. A missing helper makes every Bash command ask for confirmation.
 
-- `hooks/block-dangerous.sh` requests confirmation for commands with destructive
+- `claude/block-dangerous.sh` requests confirmation for commands with destructive
   patterns. It is a guardrail, not a sandbox or command parser.
-- `hooks/confirm-external-impact.sh` requests confirmation before publishing,
+- `claude/confirm-external-impact.sh` requests confirmation before publishing,
   deploying, or mutating remote infrastructure. It checks a fixed allowlist of
   common publish/deploy commands (not exhaustive).
-- `hooks/guard-readonly-postgres.sh` requests confirmation for uninspectable or
+- `claude/guard-readonly-postgres.sh` requests confirmation for uninspectable or
   state-changing `psql` input. It does not replace a least-privilege database
   role.
-- `hooks/auto-lint.sh` reports lint/format findings only. It never rewrites a
-  user file.
-- `hooks/command-scan.sh` is the shared helper, not a hook. It splits a command
+- `claude/guard-dashes.sh` refuses Edit, MultiEdit and Write calls that add em
+  or en dashes (U+2014, U+2013), for authors who use plain hyphens only. Only
+  dashes the call adds count, so editing text that already contains them still
+  works. No harness has a setting for this, so it is a hook.
+- `claude/auto-lint.sh` reports lint/format findings only. It never rewrites a
+  user file. `codex/auto-lint.mjs` does the same for Codex `apply_patch`.
+
+Agent attribution in commits and pull requests is a setting, not a hook:
+Claude Code's `attribution.commit`, `attribution.pr` and
+`attribution.sessionUrl`, and Codex's `commit_attribution`.
+
+- `claude/command-scan.sh` is the shared helper, not a hook. It splits a command
   into simple commands and words, so rules match programs where they run
   (`docker rm`, `rg psql`, and `ls ~/.netlify` no longer trigger `rm`, `psql`, or
   Netlify rules). Words it cannot resolve, such as `$VAR`, `$(...)`, escapes, and

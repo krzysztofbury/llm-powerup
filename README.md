@@ -1,46 +1,61 @@
-# LLM Powerup
+# Skills
 
-Portable, production-minded Agent Skills and optional harness and tool
-integrations for Claude Code, Codex, and OpenCode.
+Portable, production-minded Agent Skills, the hooks and base rules that go
+with them, and an installer that links them into Claude Code, Codex, OpenCode,
+and Gemini CLI.
 
 ## Contents
 
-- `skills/` contains portable [Agent Skills](https://agentskills.io/).
-- `integrations/claude/` contains optional Claude Code hooks. They do not apply
-  to Codex or OpenCode.
-- `integrations/opendeck/` contains the [15-key Agents control surface](integrations/opendeck/README.md)
-  built on OpenDeck and used on Omarchy 4, with Herdr session focus, Codex quota,
-  and local OpenCode activity.
+- `skills/`: portable [Agent Skills](https://agentskills.io/).
+- `hooks/`: optional Claude Code guard and lint hooks, and the Codex patch lint
+  hook. See [hooks/README.md](hooks/README.md).
+- `rules/AGENTS.md`: harness-agnostic base rules for coding agents, installed
+  as `CLAUDE.md` / `AGENTS.md` for each harness.
+- `prompts/`: standalone prompts for writing, scoring, and improving skills.
+- `integrations/`: the Claude Code status line and the
+  [OpenDeck Agents control surface](integrations/opendeck/README.md).
+- `scripts/`: the installer and `agent-scratch`, a disposable scratch-directory
+  helper for agents ([docs/AGENT-SCRATCH.md](docs/AGENT-SCRATCH.md)).
 
 ## Available Skills
 
 | Skill | Purpose |
 | --- | --- |
-| `council` | Convene installed agent CLIs as a multi-model council with anonymized peer review. |
-| `data-news` | Curate a current data engineering and database briefing. |
-| `oura` | Summarize user-authorized health and readiness data. |
-| `pair-programmer` | Apply a safety-first engineering review workflow. |
+| `article-curator` | Turn clipped web articles into concise, reusable notes in a configurable folder and format. |
+| `council` | Convene installed agent CLIs as a multi-model council with anonymized peer review and a redaction gate. |
+| `mcp-tool-design` | Write, review, and score MCP tool definitions so agents pick and call them correctly. |
+| `oura` | Summarize sleep, readiness, and activity from the Oura API or an Oura MCP server. |
+| `pair-programmer` | Evidence-based code review, design trade-offs, and debugging, with proof before completion claims. |
 | `pg-performance-advisor` | Diagnose PostgreSQL performance with read-only, redacted queries. |
-| `plausible-insights` | Analyze privacy-friendly web analytics through an authorized adapter. |
+| `plausible-insights` | Analyze Plausible Analytics traffic, content, and SEO for a configured site. |
+| `retro` | Run a session retrospective that improves the project's rules and skills, with a SQLite ledger. |
+| `sdlc-evaluator` | Audit a repository against an agentic software development lifecycle. |
 | `sentry-observability` | Design and review Sentry observability with privacy controls. |
-| `ubiquiti-advisor` | Review a user-authorized UniFi network configuration. |
+| `test-audit` | Check whether Python and SQL tests protect real behavior. |
+| `ubiquiti-advisor` | Review a UniFi network through a configured, read-only controller connection. |
 | `video-edit` | Edit recorded footage from a word-level transcript: cuts, cards, subtitles, loudness, vertical Shorts, verified renders. |
 | `whatsapp-style-guide` | Format concise, mobile-first WhatsApp messages. |
 
-## Install A Skill
+Skills that need user-specific details, such as a site, a device, a brand, or a
+data source, read them from documented configuration. Each skill's `SKILL.md`
+has a Configuration section where that applies.
 
-Symlink a selected skill directory into the location your harness discovers:
+## Install
 
 ```bash
-ln -s "$PWD/skills/<skill-name>" "$HOME/.claude/skills/<skill-name>"
-ln -s "$PWD/skills/<skill-name>" "$HOME/.agents/skills/<skill-name>"
+scripts/install.sh            # every harness
+scripts/install.sh --claude   # Claude Code only
+scripts/install.sh --dry-run  # show what would change
 ```
 
-Claude Code, Codex, and OpenCode support the Agent Skills directory format.
-Symlink into the skills location your harness discovers. Review a skill and
-its dependencies before linking it: some require an authorized analytics,
-health-data, database, or network adapter. `video-edit` needs ffmpeg, Node,
-and local Whisper; see its Requirements section.
+Skills are symlinked, never copied. A sources file can add your own private
+skills and pinned skills from other repositories next to these ones, without
+forking or copying them. See [docs/INSTALL.md](docs/INSTALL.md).
+
+Review a skill and its dependencies before linking it: some require an
+authorized analytics, health-data, database, or network connection.
+`video-edit` needs ffmpeg, Node, and local Whisper; see its Requirements
+section.
 
 ## Safety And Privacy
 
@@ -59,6 +74,7 @@ products named in individual skills.
 ## Project Docs
 
 - [Specification](SPEC.md)
+- [Installing](docs/INSTALL.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)

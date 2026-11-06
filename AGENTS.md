@@ -1,77 +1,12 @@
-# Agent Working Rules
+# Working In This Repository
 
-Portable, harness-agnostic base rules for coding agents (Claude Code, Codex,
-OpenCode, and similar). Personal editions may extend this file; harness
-installers symlink it as `CLAUDE.md` / `AGENTS.md` where each tool expects it.
+This repository is public. Read [SPEC.md](SPEC.md) before changing anything.
 
-## Verification & Deployment
-
-- For load-sensitive fixes, verify under representative load. A quiet window
-  is not evidence; state explicitly when load verification is pending.
-- To confirm what is actually on the default branch or deployed, use remote
-  evidence (`gh` CLI, `git ls-remote`, the hosting UI), never local SHA-based
-  checks.
-- Never retype a commit SHA, image digest or run ID from memory or from an
-  abbreviated form. Take it from the command that produces it, in the same
-  invocation (`$(git ls-remote origin refs/heads/main | cut -f1)`) or by
-  copying its output; a reconstructed identifier names nothing or the wrong
-  thing.
-- Before `gh pr merge`, compare the PR head (`gh pr view --json headRefOid`)
-  with the SHA you pushed. A PR can lag behind the branch; merging a stale
-  head ships half the work.
-- Wait on CI by the run ID for the pushed commit (`gh run watch ID
-  --exit-status`), not `gh pr checks --watch`, which has hung after checks
-  finished. While it runs, compare each job's elapsed time with its finished
-  siblings and report an outlier at once instead of waiting.
-- A visible UI change is not "done" without visual verification in a real
-  browser. If a visual check is impossible, say so explicitly instead of
-  claiming completion from grep or curl output.
-
-## Production Investigation & Logs
-
-- Before production log or cluster work, check the required access path:
-  credentials, target context and VPN when used. If access fails, request
-  re-authentication before continuing dependent work.
-- An empty log or query result obtained through a filter (container name,
-  label selector) is suspect: verify the filter matches actually running
-  resources before concluding "no logs" or "no errors".
-
-## Editing & Testing
-
-- After a batch of edits, re-check for formatter or lint side effects. An
-  autofix pass can strip newly added imports even when tests pass.
-- For behavior changes, exercise the affected runtime path or a smoke test.
-  Run required project checks; after they pass, repeat or broaden testing only
-  for new changes, failures or an unresolved risk.
-- Before a repository-wide regex substitution, list every match per pattern,
-  including hyphenated names, URLs, and link paths, then review the word diff.
-- Write the full output of a costly or non-repeatable command (calls against
-  a live budget, release runs) to a scratch file before filtering it; output
-  trimmed with `tail` can force a second run.
-
-## Scratch Space & Cleanup
-
-- Create disposable artifacts in a unique `mktemp -d` directory under a
-  harness-approved location. Never reuse a shared task directory.
-- Use a lifecycle helper or cleanup traps, including termination signals;
-  stop task processes before deleting their files. Keep child temporary files
-  inside the owned directory. Traps cannot cover SIGKILL or machine crashes.
-- Give tools that write to the current directory by default (`pip download`,
-  `curl -O`, `uv build`) an explicit scratch output path.
-- Keep Git worktrees, source changes, and durable deliverables outside
-  disposable scratch. Delete only paths allocated by the current task.
-- The same holds for branches, tags, images, containers and volumes: delete
-  them by the names this task created, never by a pattern or bulk selector
-  such as `git branch --merged` or `docker volume prune`.
-- Record ownership for multi-call scratch; clean it on completion or failure.
-  Retain only useful deliverables. Report leftover paths, sizes, reasons and
-  cleanup failures; never delete another task's files or escalate to hide them.
-
-## Content & Deliverables
-
-- Before writing anything into a repository (PR bodies, commit messages,
-  docstrings, docs), check whether the repository is public or private.
-  Public repositories get English only and zero private or personal context.
-- CVs, decks, and summaries generated from repository data must be grounded
-  in the actual named services and real code or database statistics. Never
-  infer generic descriptions from raw commit history.
+- Everything here is English and free of personal data: no names, private
+  hosts, local paths, credentials, or owner-specific examples. User-specific
+  behavior belongs in documented configuration, not in a skill.
+- `rules/AGENTS.md` is not about this repository. It holds the global base
+  rules that `scripts/install.sh` installs for every harness.
+- Skills must stay portable across Claude Code, Codex, and OpenCode. Hooks and
+  `integrations/` may be harness-specific and must say so.
+- Run the validation commands from SPEC.md before proposing a change.
