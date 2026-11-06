@@ -1,10 +1,46 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+All notable changes to this project are documented in this file. Every merge
+to `main` is released as a new [semantic version](https://semver.org/); the
+section for that version becomes the GitHub release notes. See
+[RELEASE.md](RELEASE.md).
 
-## Unreleased
+## [1.0.0] - 2026-11-06
+
+### Added
+
+- `scripts/install.sh`: links skills, hooks and the status line into Claude
+  Code, Codex, OpenCode and Gemini CLI, and generates their rules files from
+  `rules/AGENTS.md` plus an optional personal overlay. A sources file combines
+  this repository with private skill directories and pinned git repositories;
+  name clashes stop the run and links into retired sources are pruned. See
+  `docs/INSTALL.md`.
+- Skills: `article-curator`, `mcp-tool-design`, `sdlc-evaluator`, `test-audit`.
+- `retro` records entries in a SQLite ledger (`scripts/ledger.py`) under the
+  user's state directory, and targets the project's own rules and skills.
+- `hooks/claude/guard-dashes.sh` refuses edits that add em or en dashes.
+- The Codex patch lint hook, the Claude Code status line and `agent-scratch`.
+- Every merge to `main` is released as a semantic version from its pull
+  request label (`RELEASE.md`, `.github/workflows/release.yml`).
+- `scripts/check-opencode-skills.mjs` and `scripts/check-council-opencode.mjs`:
+  model-free checks against an isolated OpenCode server.
+- OpenDeck: keys can read Claude usage from Omarchy's record
+  (`"source": "claude"`), and a Run Command action runs a configured
+  program without a shell.
 
 ### Changed
+
+- The repository is renamed from `llm-powerup` to `skills`. Hooks moved from
+  `integrations/claude/hooks/` to `hooks/claude/`, and the base rules from
+  `AGENTS.md` to `rules/AGENTS.md`; the root `AGENTS.md` now describes this
+  repository.
+- `council`, `pair-programmer`, `plausible-insights`, `ubiquiti-advisor`,
+  `whatsapp-style-guide` and `oura` were rewritten from their newer private
+  variants; user-specific parts are now documented configuration.
+
+### Removed
+
+- The `data-news` skill.
 
 - Claude hooks: `set` with only the options that stop or trace a command (`e`,
   `u`, `x`, and `-o pipefail`, `errexit`, `nounset`, `xtrace`) no longer makes

@@ -5,12 +5,18 @@ and used on [Omarchy](https://github.com/basecamp/omarchy) 4.**
 This is the actual 15-key Elgato Stream Deck MK.2 Agents page, not a generic
 deck layout. The OpenDeck plugin draws live status; Herdr supplies agent state
 and pane focus; Codex and OpenCode supply their own local metrics. Omarchy
-provides the surrounding Linux desktop workflow. The plugin does not call
-Omarchy commands itself.
+provides the surrounding Linux desktop workflow. Quota and activity keys can
+instead read Claude usage from the record Omarchy's agents panel keeps (see
+[Claude usage from Omarchy](#claude-usage-from-omarchy)); only those keys call
+an Omarchy command, and only when pressed. A generic
+[Run Command](#run-command-key) key runs a command named in its settings and
+can show that command's on/off status.
 
 This integration uses OpenDeck 2.14's profile format and plugin protocol, on
 Linux with Node 22.13+ (22.x) or 23.4+. These versions expose `node:sqlite`
 without a flag, as documented in the [Node SQLite history](https://nodejs.org/api/sqlite.html).
+Only the OpenCode activity key loads `node:sqlite`, and only when it first
+queries; the other keys run on any Node 22.
 The profile is laid out for a 5 x 3 keypad. It
 keeps the existing `dev.krzysztof.agents.*` action IDs so it is compatible with
 the working layout.
@@ -32,8 +38,9 @@ prioritizes blocked, then completed, working, and idle sessions. Slot positions
 stay fixed while the plugin runs; they are not persisted between restarts.
 
 The surrounding Omarchy setup puts an `Agents` Switch Profile key in position 7
-of `Default`, linking to `Agents/Home`. Positions 8 and 9 are empty; the bottom
-row has system gauges. Other OpenDeck profiles in the setup control Hyprland's
+of `Default`, linking to `Agents/Home`. Position 8 holds a Run Command key that
+toggles a meeting camera helper, and position 9 is empty; the bottom row has
+system gauges. Other OpenDeck profiles in the setup control Hyprland's
 master layout, Omarchy's screenshot/OCR tools, media over MPRIS, and OBS. The
 Agents page here is the only profile published by this integration; those
 other keys depend on separate plugins, commands, and local device settings.
@@ -45,6 +52,8 @@ other keys depend on separate plugins, commands, and local device settings.
 | Pulse and sessions | Herdr Unix socket at `~/.config/herdr/herdr.sock`; `session.snapshot` and `agent.focus` | 2 seconds |
 | Quota | `codex app-server --stdio` with `CODEX_HOME=~/.codex` | 5 minutes (press to force refresh) |
 | Activity | Read-only `~/.local/share/opencode/opencode.db` | 60 seconds (press to refresh) |
+| Quota and activity with `source: "claude"` | Omarchy's `~/.local/state/omarchy/agents/usage/claude.json` | 30 seconds (press to ask Omarchy to rewrite it) |
+| Run Command with `statusArgs` | The configured command's stdout and exit status | `intervalSeconds`, default 5 seconds |
 
 The plugin also accepts `HERDR_SOCKET` and `OPENCODE_DB` environment variables.
 The quota key accepts `codexExecutable`, `codexHome`, and `refreshMinutes` in its
@@ -73,6 +82,94 @@ sum as zero. The fixture test validates this expected schema only. Queries run
 synchronously and can delay all key updates on large databases; representative
 database-size performance and installed-version compatibility need local checks.
 
+## Claude usage from Omarchy
+
+Set `"source": "claude"` in a quota or activity key's settings to show Claude
+Code usage instead of Codex quota or OpenCode activity. The keys then read the
+record that Omarchy's `omarchy-agent-usage-claude` collector writes for the
+agents panel, at `$XDG_STATE_HOME/omarchy/agents/usage/claude.json` (default
+`~/.local/state/...`, or the path in `CLAUDE_USAGE_RECORD`). The collector owns
+the OAuth usage call and the transcript scan, so the deck never touches Claude
+credentials and does not poll the usage endpoint a second time. The record is
+reread every 30 seconds; the panel rewrites it every 15 minutes.
+
+The quota key shows the allowance left in the 5-hour and 7-day windows and the
+record's age, and turns amber with `CLAUDE STALE` once the record is older than
+30 minutes. Model-specific weekly limits are ignored. A window whose reset time
+has passed shows full allowance until the next refresh, and an unknown limit
+shows `NO DATA` rather than a full bar. Pressing it runs
+`omarchy-agent-usage-update --limits-only claude` (override the executable with
+`OMARCHY_AGENT_USAGE_UPDATE`). Activity keys show tokens for today (`hours` 24)
+or the last N days (`hours` 168 for 7), cache reads included, matching the
+Omarchy panel. Pressing one runs a full `omarchy-agent-usage-update claude`.
+Keys without `source`, or with any other value, keep the Codex and OpenCode
+behavior above.
+
+## Run Command key
+
+`dev.krzysztof.agents.command` runs a command taken entirely from the key's
+action settings; the plugin has no built-in commands. It has no property
+inspector, so edit the settings in the profile JSON while OpenDeck is stopped.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `command` | required | Executable name or path. A leading `~/` is expanded. A bare name is looked up on `PATH`, then in `~/.local/bin`, because a desktop-started OpenDeck often lacks it on `PATH`. |
+| `args` | `[]` | Arguments passed on key press, as a JSON list of strings. |
+| `statusArgs` | none | When set, the key also runs `command` with these arguments to show on or off. Without it the key is a plain launcher showing `RUN`. |
+| `title` | command's basename | Top line of the key, upper-cased and shortened to fit. |
+| `onText`, `offText` | `ON`, `OFF` | Bottom line in each state. |
+| `onColor` | green | Fill color for the on state, as `#rgb` or `#rrggbb`; anything else falls back to the default. |
+| `intervalSeconds` | 5 | Status poll interval, 1 to 3600. |
+| `timeoutSeconds` | 15 | Press timeout, 1 to 600. A status check gets at most 5 seconds. |
+
+For example, a key that toggles a camera helper script and shows its state:
+
+```json
+"settings": {
+  "command": "zoom-cam",
+  "args": ["toggle"],
+  "statusArgs": ["status"],
+  "title": "Zoom cam",
+  "onText": "ZOOM ON",
+  "offText": "ZOOM OFF",
+  "onColor": "#dc2626",
+  "intervalSeconds": 2
+}
+```
+
+Execution rules:
+
+- No shell is involved. The command is started with an argument vector, so
+  `$VAR`, `$(...)`, `;`, `|`, globs and `~` inside `args` reach the program as
+  literal text. Use `"command": "sh", "args": ["-c", "..."]` only when you
+  want shell syntax, and quote accordingly.
+- The command runs as the OpenDeck user, in the home directory, with OpenDeck's
+  environment and no stdin. Anyone who can edit the profile can run commands
+  as that user, as with OpenDeck's own Run Command action.
+- A press succeeds when the command exits with status 0; the key then shows
+  OpenDeck's check mark, otherwise its alert mark and a line in the plugin log.
+  The key shows `WAIT` while the command runs and ignores presses meanwhile.
+  The press completes when the command exits, even if it left a background
+  process running.
+- The command runs in its own process group. When a press or status check
+  exceeds its timeout, the whole group is killed with SIGKILL, so a command
+  that starts a long-running program must detach it, for example with
+  `systemd-run --user` or `setsid -f`.
+- Status: if the first line of stdout is `on`, `true`, `yes`, `active`,
+  `enabled` or `1` the key is on; `off`, `false`, `no`, `inactive`, `disabled`
+  or `0` means off. Any other output falls back to the exit status: 0 is on,
+  anything else is off. A status command that cannot start or times out shows
+  `ERROR`. Only the first 4 KB of status output is read; press output is
+  discarded.
+- Polling keeps the key correct when the state changes outside the deck, and
+  each press is followed by an immediate status check.
+- Missing or malformed settings (no `command`, a non-list `args`) show `ERROR`
+  and a press shows the alert mark without running anything.
+
+OpenDeck's bundled Starter Pack also has a Run Command action. That one runs
+its command through `sh -c` and can only change the key's title text; this one
+runs without a shell and draws its own status image.
+
 **Herdr is required for the pulse and session keys.** Without its socket, those
 keys show `OFFLINE`; quota and activity still use their independent sources.
 Codex quota needs a signed-in Codex CLI, and OpenCode activity needs a populated
@@ -94,7 +191,7 @@ test -r "$HOME/.local/share/opencode/opencode.db"
 ```
 
 OpenDeck must be stopped before changing its profile JSON: it keeps profiles in
-memory and can overwrite disk edits on exit. Work from the `llm-powerup` root:
+memory and can overwrite disk edits on exit. Work from the repository root:
 
 ```bash
 pgrep -x opendeck || true    # quit OpenDeck if a PID appears
@@ -130,9 +227,11 @@ credentials are bundled; the Codex quota key uses the local CLI sign-in.
 
 Run `npm test` in `integrations/opendeck/dev.krzysztof.agents.sdPlugin` to
 exercise slot assignment, quota parsing and cached-failure runtime behavior,
-a Herdr socket round-trip, the local OpenCode SQL query, and the 15-key profile.
-The quota runtime test uses a local CLI fixture and simulated OpenDeck transport;
-it makes no provider requests. On the physical deck, open the
+a Herdr socket round-trip, the local OpenCode SQL query, Claude record parsing
+and refresh, the Run Command key (argument passing without a shell, lookup,
+timeouts, status parsing, and a press-and-poll runtime cycle), and the 15-key
+profile. The runtime tests use local fixtures and a simulated OpenDeck
+transport; they make no provider requests. On the physical deck, open the
 Agents page, confirm the status images update, press Pulse or a session key to
 focus a real pane, press Quota to refresh it, and compare the activity keys to
 your local OpenCode usage. A passing test run alone does not verify a real

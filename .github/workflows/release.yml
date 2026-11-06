@@ -1,0 +1,74 @@
+name: Release
+
+# Every merge to main that passes CI becomes a semantic-version release.
+# The bump comes from the merged pull request's label (release:major,
+# release:minor; anything else is a patch). See RELEASE.md.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Skip a commit that is already released
+        id: existing
+        run: |
+          tag=$(git tag --points-at "$SHA" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          [[ -z "$tag" ]] || echo "$SHA is already released as $tag."
+
+      - name: Decide the version and write the notes
+        if: steps.existing.outputs.tag == ''
+        id: version
+        run: |
+          pr=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)][0] // empty')
+          bump=patch
+          if [[ -n "$pr" ]]; then
+            labels=$(jq -r '.labels[].name' <<<"$pr")
+            if grep -qx 'release:major' <<<"$labels"; then bump=major
+            elif grep -qx 'release:minor' <<<"$labels"; then bump=minor
+            fi
+          fi
+          version=$(git tag -l 'v*' | bash scripts/next-version.sh "$bump")
+          bash scripts/release-notes.sh "$version" CHANGELOG.md > notes.md
+          if [[ ! -s notes.md ]]; then
+            if [[ -n "$pr" ]]; then
+              jq -r '"## \(.title) (#\(.number))\n\n\(.body // "")"' <<<"$pr" > notes.md
+            else
+              git log -1 --format='%s%n%n%b' "$SHA" > notes.md
+            fi
+          fi
+          previous=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
+          if [[ -n "$previous" ]]; then
+            printf '\n**Full changelog:** https://github.com/%s/compare/%s...%s\n' "$GH_REPO" "$previous" "$version" >> notes.md
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing $version ($bump) at $SHA"
+
+      - name: Publish the release
+        if: steps.existing.outputs.tag == ''
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "$VERSION" --target "$SHA" --title "$VERSION" --notes-file notes.md

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const hooks = existsSync(resolve(root, 'claude/hooks')) ? resolve(root, 'claude/hooks') : resolve(root, 'integrations/claude/hooks');
+const hooks = resolve(root, 'hooks/claude');
 function decision(hook, command, payload = {}, env = {}) {
   // These commands are input strings only; they are never executed.
   const result = spawnSync('/bin/bash', [resolve(hooks, hook + '.sh')], {
@@ -104,6 +104,7 @@ const cases = [
   ['guard-readonly-postgres', 'psql -c "SELECT $value"', 'ask'],
   ['guard-readonly-postgres', "docker exec db psql -U postgres -c 'DELETE FROM example'", 'ask'],
   ['guard-readonly-postgres', 'psql "postgresql://user:secret@db/example" -c "SELECT 1"', 'ask'],
+
 ];
 for (const [hook, command, expected] of cases) {
   test(hook + ': ' + command, () => assert.equal(decision(hook, command), expected));
@@ -453,4 +454,36 @@ test('large heredocs are scanned quickly', () => {
   const started = Date.now();
   assert.equal(decision('block-dangerous', `cat > big.sh <<'EOF'\n${body}EOF`), undefined);
   assert.ok(Date.now() - started < 3000, 'block-dangerous took ' + (Date.now() - started) + 'ms');
+});
+
+
+// Dashes are written as escapes so this file follows the rule it tests.
+const dash = '\u2014', endash = '\u2013';
+function edit(tool, toolInput) {
+  const result = spawnSync('/bin/bash', [resolve(hooks, 'guard-dashes.sh')], {
+    input: JSON.stringify({ tool_name: tool, tool_input: toolInput }), encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim() ? JSON.parse(result.stdout).hookSpecificOutput.permissionDecision : undefined;
+}
+test('edits that add em or en dashes are refused', () => {
+  assert.equal(edit('Edit', { old_string: 'a - b', new_string: `a ${dash} b` }), 'deny');
+  assert.equal(edit('Edit', { old_string: '1-2', new_string: `1${endash}2` }), 'deny');
+  assert.equal(edit('MultiEdit', { edits: [{ old_string: 'x', new_string: 'y' }, { old_string: 'a', new_string: `a${dash}` }] }), 'deny');
+  assert.equal(edit('Write', { file_path: '/nonexistent/new.md', content: `Title ${dash} subtitle` }), 'deny');
+  assert.equal(edit('Edit', { old_string: 'a - b', new_string: 'a - c' }), undefined);
+});
+test('dashes already in the text do not block an edit', t => {
+  const base = mkdtempSync(join(tmpdir(), 'dash-guard-'));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const quoted = join(base, 'quote.md');
+  writeFileSync(quoted, `He said ${dash} twice ${dash} here.\n`);
+  assert.equal(edit('Edit', { old_string: `said ${dash} twice`, new_string: `wrote ${dash} twice` }), undefined);
+  assert.equal(edit('Write', { file_path: quoted, content: `He wrote ${dash} twice ${dash} here.\n` }), undefined);
+  assert.equal(edit('Write', { file_path: quoted, content: `${dash} He wrote ${dash} twice ${dash} here.\n` }), 'deny');
+});
+test('the dash guard lets malformed input through', () => {
+  const result = spawnSync('/bin/bash', [resolve(hooks, 'guard-dashes.sh')], { input: 'not-json', encoding: 'utf8' });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, '');
 });

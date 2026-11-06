@@ -16,24 +16,31 @@
     },
     {
       "Icon": "icons/quota",
-      "Name": "Codex Quota",
+      "Name": "Agent Quota",
       "UUID": "dev.krzysztof.agents.quota",
       "States": [{ "Image": "icons/quota" }],
-      "Tooltip": "Show Codex 5-hour and 7-day quota remaining"
+      "Tooltip": "Show Codex or Claude 5-hour and 7-day quota remaining; press to refresh"
     },
     {
       "Icon": "icons/activity",
-      "Name": "OpenCode Activity",
+      "Name": "Agent Activity",
       "UUID": "dev.krzysztof.agents.activity",
       "States": [{ "Image": "icons/activity" }],
-      "Tooltip": "Show local OpenCode token activity"
+      "Tooltip": "Show local OpenCode or Claude Code token activity; press to refresh"
+    },
+    {
+      "Icon": "icons/command",
+      "Name": "Run Command",
+      "UUID": "dev.krzysztof.agents.command",
+      "States": [{ "Image": "icons/command" }],
+      "Tooltip": "Run the command set in the key settings; optionally show its on/off status"
     }
   ],
   "Author": "LLM Powerup",
   "Category": "Agents",
   "CategoryIcon": "icons/agents",
   "CodePath": "plugin.js",
-  "Description": "Herdr agent state, Codex quota, and OpenCode activity for OpenDeck",
+  "Description": "Herdr agent state, Codex or Claude quota, token activity, and a Run Command key for OpenDeck",
   "Icon": "icons/agents",
   "Name": "Agents",
   "OS": [{ "Platform": "linux", "MinimumVersion": "1.0" }],
