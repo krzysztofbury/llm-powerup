@@ -39,7 +39,7 @@ umask 077
 scratch=$(mktemp -d "$scratch_root/agent-task.XXXXXXXX")
 child_pid=
 
-# shellcheck disable=SC2329  # invoked through trap
+# shellcheck disable=SC2317,SC2329  # invoked through trap
 cleanup() {
   local status=$?
   trap - EXIT
@@ -58,7 +58,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# shellcheck disable=SC2329  # invoked through trap
+# shellcheck disable=SC2317,SC2329  # invoked through trap
 cancel() {
   local signal=$1
   local status=$2
