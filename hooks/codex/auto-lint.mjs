@@ -37,7 +37,7 @@ function main() {
     }
     const filePath = resolve(input.cwd || process.cwd(), path);
     if (!existsSync(filePath)) continue;
-    const result = spawnSync('bash', [resolve(repositoryRoot, 'claude/hooks/auto-lint.sh')], {
+    const result = spawnSync('bash', [resolve(repositoryRoot, 'hooks/claude/auto-lint.sh')], {
       input: JSON.stringify({ tool_input: { file_path: filePath } }),
       encoding: 'utf8', timeout: 10000, maxBuffer: 256 * 1024,
     });
