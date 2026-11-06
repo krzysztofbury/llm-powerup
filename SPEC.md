@@ -46,8 +46,8 @@ repository and are linked next to these through an installer sources file
 - `prompts/`: standalone prompts for writing and improving skills.
 - `integrations/<platform>/`: optional integrations, such as the Claude Code
   status line and the OpenDeck control surface.
-- `scripts/`: the installer, `agent-scratch`, and diagnostics such as
-  `check-council-opencode.mjs`.
+- `scripts/`: the installer, `agent-scratch`, and model-free OpenCode
+  diagnostics (`check-council-opencode.mjs`, `check-opencode-skills.mjs`).
 - `docs/`: installation and tooling guides.
 - `tests/`: Node tests for hooks, the installer, and shared tooling.
 

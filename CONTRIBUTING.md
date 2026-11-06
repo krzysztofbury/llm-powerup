@@ -10,7 +10,9 @@ customer data, network snapshots, or copied private prompts.
 
 ## Workflow
 
-1. Add or update a skill, reference, or integration with its safety limits.
+1. Add or update a skill, reference, hook, or integration with its safety
+   limits. Anything user-specific is documented configuration, never a
+   hardcoded value (see "Public By Default" in SPEC.md).
 2. Update the relevant README content and [CHANGELOG.md](CHANGELOG.md).
 3. Run:
 
@@ -19,6 +21,7 @@ pre-commit run --all-files
 while IFS= read -r -d '' file; do bash -n "$file"; done < <(git ls-files -z '*.sh')
 node --test tests/*.test.mjs integrations/opendeck/dev.krzysztof.agents.sdPlugin/test/*.test.js
 bash skills/council/scripts/council_test.sh
+bash skills/retro/scripts/ledger_test.sh
 ```
 
 4. Use Node.js 24 or newer for these checks. Test changed runtime paths with

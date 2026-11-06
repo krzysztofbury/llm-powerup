@@ -14,8 +14,9 @@ and Gemini CLI.
 - `prompts/`: standalone prompts for writing, scoring, and improving skills.
 - `integrations/`: the Claude Code status line and the
   [OpenDeck Agents control surface](integrations/opendeck/README.md).
-- `scripts/`: the installer and `agent-scratch`, a disposable scratch-directory
-  helper for agents ([docs/AGENT-SCRATCH.md](docs/AGENT-SCRATCH.md)).
+- `scripts/`: the installer, `agent-scratch`, a disposable scratch-directory
+  helper for agents ([docs/AGENT-SCRATCH.md](docs/AGENT-SCRATCH.md)), and
+  model-free OpenCode checks for council isolation and skill discovery.
 
 ## Available Skills
 

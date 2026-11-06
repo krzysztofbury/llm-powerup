@@ -17,6 +17,11 @@ All notable changes to this project are documented in this file.
   user's state directory, and targets the project's own rules and skills.
 - `hooks/claude/guard-dashes.sh` refuses edits that add em or en dashes.
 - The Codex patch lint hook, the Claude Code status line and `agent-scratch`.
+- `scripts/check-opencode-skills.mjs` and `scripts/check-council-opencode.mjs`:
+  model-free checks against an isolated OpenCode server.
+- OpenDeck: keys can read Claude usage from Omarchy's record
+  (`"source": "claude"`), and a Run Command action runs a configured
+  program without a shell.
 
 ### Changed
 
