@@ -13,7 +13,9 @@ customer data, network snapshots, or copied private prompts.
 1. Add or update a skill, reference, hook, or integration with its safety
    limits. Anything user-specific is documented configuration, never a
    hardcoded value (see "Public By Default" in SPEC.md).
-2. Update the relevant README content and [CHANGELOG.md](CHANGELOG.md).
+2. Update the relevant README content, choose the release label, and add the
+   version's section to [CHANGELOG.md](CHANGELOG.md) as described in
+   [RELEASE.md](RELEASE.md).
 3. Run:
 
 ```bash

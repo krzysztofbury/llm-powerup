@@ -1,8 +1,11 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+All notable changes to this project are documented in this file. Every merge
+to `main` is released as a new [semantic version](https://semver.org/); the
+section for that version becomes the GitHub release notes. See
+[RELEASE.md](RELEASE.md).
 
-## Unreleased
+## [1.0.0] - 2026-11-06
 
 ### Added
 
@@ -17,6 +20,8 @@ All notable changes to this project are documented in this file.
   user's state directory, and targets the project's own rules and skills.
 - `hooks/claude/guard-dashes.sh` refuses edits that add em or en dashes.
 - The Codex patch lint hook, the Claude Code status line and `agent-scratch`.
+- Every merge to `main` is released as a semantic version from its pull
+  request label (`RELEASE.md`, `.github/workflows/release.yml`).
 - `scripts/check-opencode-skills.mjs` and `scripts/check-council-opencode.mjs`:
   model-free checks against an isolated OpenCode server.
 - OpenDeck: keys can read Claude usage from Omarchy's record

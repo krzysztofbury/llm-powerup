@@ -50,6 +50,9 @@ repository and are linked next to these through an installer sources file
   diagnostics (`check-council-opencode.mjs`, `check-opencode-skills.mjs`).
 - `docs/`: installation and tooling guides.
 - `tests/`: Node tests for hooks, the installer, and shared tooling.
+- `.github/workflows/`: `ci.yml` validates every change; `release.yml`
+  publishes a semantic-version release for every merge to `main`
+  ([RELEASE.md](RELEASE.md)).
 
 ## Validation
 

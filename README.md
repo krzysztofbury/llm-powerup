@@ -76,6 +76,7 @@ products named in individual skills.
 
 - [Specification](SPEC.md)
 - [Installing](docs/INSTALL.md)
+- [Releasing](RELEASE.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
